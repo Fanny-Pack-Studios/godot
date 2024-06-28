@@ -45,6 +45,7 @@
 #include "servers/visual/visual_server_raster.h"
 #include "servers/visual/visual_server_wrap_mt.h"
 #include "windows_terminal_logger.h"
+#include "modules/godot_tracy/profiler.h"
 
 #include <avrt.h>
 #include <direct.h>
@@ -3540,6 +3541,9 @@ void OS_Windows::run() {
 	main_loop->init();
 
 	while (!force_quit) {
+		FrameMark;
+		ZoneScoped;
+
 		process_events(); // get rid of pending events
 		if (Main::iteration())
 			break;
