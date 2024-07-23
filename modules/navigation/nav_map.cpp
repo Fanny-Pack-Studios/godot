@@ -85,7 +85,7 @@ Vector<Vector3> NavMap::get_path(Vector3 p_origin, Vector3 p_destination, bool p
 		const gd::Polygon &p = polygons[i];
 
 		// Only consider the polygon if it in a region with compatible layers.
-		if ((p_navigation_layers & p.owner->get_navigation_layers()) == 0) {
+		if (!p.owner || (p_navigation_layers & p.owner->get_navigation_layers()) == 0) {
 			continue;
 		}
 
