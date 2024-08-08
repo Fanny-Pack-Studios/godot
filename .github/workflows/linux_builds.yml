@@ -32,6 +32,7 @@ jobs:
             cache-name: linux-editor
             target: release_debug
             tools: true
+            debug_symbols: true
             bin: "./bin/godot.x11.opt.tools.with_debug_symbols.64"
             artifact: true
 
