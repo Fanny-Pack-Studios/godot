@@ -59,6 +59,7 @@ jobs:
           platform: osx
           target: ${{ matrix.target }}
           tools: ${{ matrix.tools }}
+          debug_symbols: ${{ matrix.debug_symbols }}
 
       - name: Save Godot build cache
         uses: ./.github/actions/godot-cache-save
