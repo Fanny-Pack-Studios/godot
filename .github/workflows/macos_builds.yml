@@ -26,6 +26,14 @@ jobs:
             tools: true
             bin: "./bin/godot.osx.opt.tools.64"
 
+          - name: Editor (target=release_debug, tools=yes, debug_symbols=true)
+            cache-name: macos-editor
+            target: release_debug
+            tools: true
+            debug_symbols: true
+            bin: "./bin/godot.osx.opt.tools.with_debug_symbols.64"            
+
+
           - name: Template (target=release, tools=no)
             cache-name: macos-template
             target: release

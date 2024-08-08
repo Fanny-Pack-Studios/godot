@@ -13,6 +13,9 @@ inputs:
   platform:
     description: The Godot platform to build.
     required: false
+  debug_symbols:
+    description: If editor should have debugging symbols (includes stacktraces)
+    required: false
   sconsflags:
     default: ""
   scons-cache:
@@ -34,5 +37,5 @@ runs:
           SCONS_CACHE_LIMIT: ${{ inputs.scons-cache-limit }}
       run: |
         echo "Building with flags:" ${{ env.SCONSFLAGS }}
-        scons p=${{ inputs.platform }} target=${{ inputs.target }} tools=${{ inputs.tools }} tests=${{ inputs.tests }} ${{ env.SCONSFLAGS }}
+        scons p=${{ inputs.platform }} target=${{ inputs.target }} tools=${{ inputs.tools }} debug_symbols=${{ input.debug_symbols }} tests=${{ inputs.tests }} ${{ env.SCONSFLAGS }}
         ls -l bin/

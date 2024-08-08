@@ -27,6 +27,13 @@ jobs:
             bin: "./bin/godot.x11.opt.tools.64"
             artifact: true
 
+          - name: Editor (target=release_debug, tools=yes, debug_symbols=yes)
+            cache-name: linux-editor
+            target: release_debug
+            tools: true
+            bin: "./bin/godot.x11.opt.tools.with_debug_symbols.64"
+            artifact: true
+
           - name: Template (target=release, tools=no)
             cache-name: linux-template
             target: release
