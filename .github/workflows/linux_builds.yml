@@ -7,7 +7,6 @@ on:
 env:
   # Only used for the cache key. Increment version to force clean build.
   GODOT_BASE_BRANCH: 3.x
-  SCONSFLAGS: verbose=yes warnings=all werror=yes
 
 concurrency:
   group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-linux
@@ -24,6 +23,7 @@ jobs:
           - name: Editor (target=release_debug, tools=yes)
             cache-name: linux-editor
             target: release_debug
+            sconsflags: verbose=yes warnings=all werror=yes
             tools: true
             bin: "./bin/godot.x11.opt.tools.64"
             artifact: true
@@ -32,13 +32,14 @@ jobs:
             cache-name: linux-editor-with-debug-symbols
             target: release_debug
             tools: true
-            debug_symbols: true
+            sconsflags: verbose=yes warnings=all werror=yes debug_symbols=yes
             bin: "./bin/godot.x11.opt.tools.with_debug_symbols.64"
             artifact: true
 
           - name: Template (target=release, tools=no)
             cache-name: linux-template
             target: release
+            sconsflags: verbose=yes warnings=all werror=yes
             tools: false
             artifact: true
 
@@ -79,7 +80,7 @@ jobs:
       - name: Compilation
         uses: ./.github/actions/godot-build
         with:
-          sconsflags: ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }}
+          sconsflags: ${{ matrix.sconsflags }}
           platform: linuxbsd
           target: ${{ matrix.target }}
           tools: ${{ matrix.tools }}
@@ -102,7 +103,7 @@ jobs:
         uses: ./.github/actions/godot-build
         if: ${{ matrix.build-mono }}
         with:
-          sconsflags: ${{ env.SCONSFLAGS }} ${{ matrix.sconsflags }} mono_glue=yes
+          sconsflags: ${{ matrix.sconsflags }} mono_glue=yes
           platform: linuxbsd
           target: ${{ matrix.target }}
           tools: ${{ matrix.tools }}

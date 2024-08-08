@@ -8,7 +8,6 @@ on:
 env:
   # Only used for the cache key. Increment version to force clean build.
   GODOT_BASE_BRANCH: 3.x
-  SCONSFLAGS: verbose=yes warnings=all werror=yes debug_symbols=no
   SCONS_CACHE_MSVC_CONFIG: true
 
 concurrency:
@@ -25,19 +24,21 @@ jobs:
       matrix:
         include:
           - name: Editor (target=release_debug, tools=yes)
+            sconsflags: verbose=yes warnings=all werror=yes debug_symbols=no
             cache-name: windows-editor
             target: release_debug
             tools: true
             bin: "./bin/godot.windows.opt.tools.64.exe"
           
           - name: Editor (target=release_debug, tools=yes, debug_symbols=yes)
+            sconsflags: verbose=yes warnings=all werror=yes debug_symbols=yes
             cache-name: windows-editor-with-debug-symbols
             target: release_debug
             tools: true
-            debug_symbols: true
             bin: "./bin/godot.windows.opt.tools.with_debug_symbols.64.exe"
 
           - name: Template (target=release, tools=no)
+            sconsflags: verbose=yes warnings=all werror=yes debug_symbols=no
             cache-name: windows-template
             target: release
             tools: false
@@ -60,7 +61,7 @@ jobs:
       - name: Compilation
         uses: ./.github/actions/godot-build
         with:
-          sconsflags: ${{ env.SCONSFLAGS }}
+          sconsflags: ${{ matrix.sconsflags }}
           platform: windows
           target: ${{ matrix.target }}
           tools: ${{ matrix.tools }}
