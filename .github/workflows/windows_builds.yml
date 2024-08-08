@@ -31,7 +31,7 @@ jobs:
             bin: "./bin/godot.windows.opt.tools.64.exe"
           
           - name: Editor (target=release_debug, tools=yes, debug_symbols=yes)
-            cache-name: windows-editor
+            cache-name: windows-editor-with-debug-symbols
             target: release_debug
             tools: true
             debug_symbols: true

@@ -29,7 +29,7 @@ jobs:
             artifact: true
 
           - name: Editor (target=release_debug, tools=yes, debug_symbols=yes)
-            cache-name: linux-editor
+            cache-name: linux-editor-with-debug-symbols
             target: release_debug
             tools: true
             debug_symbols: true
