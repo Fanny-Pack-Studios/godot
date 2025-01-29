@@ -2936,6 +2936,20 @@ Error GLTFDocument::_parse_meshes(Ref<GLTFState> p_state) {
 				mat = mat3d;
 			}
 			int32_t mat_idx = import_mesh->get_surface_count();
+
+			// Check for invalid indices.
+			if (array[Mesh::ARRAY_INDEX] && array[Mesh::ARRAY_INDEX] != Variant()) {
+				const Vector<int> &inds = array[Mesh::ARRAY_INDEX];
+
+				if (array[Mesh::ARRAY_VERTEX] && array[Mesh::ARRAY_VERTEX] != Variant()) {
+					const Vector<Vector3> &vertices = array[Mesh::ARRAY_VERTEX];
+					int num_verts = vertices.size();
+
+					// The mesh contains invalid indices, abort.
+					ERR_FAIL_COND_V(!Geometry::verify_indices(inds.ptr(), inds.size(), num_verts), ERR_FILE_CORRUPT);
+				}
+			}
+
 			import_mesh->add_surface_from_arrays(primitive, array, morphs, p_state->compress_flags);
 			import_mesh->surface_set_material(mat_idx, mat);
 		}
@@ -3241,16 +3255,16 @@ Error GLTFDocument::_parse_textures(Ref<GLTFState> p_state) {
 		if (p_state->external_images_paths.has(t->get_src_image())) {
 			tex = ResourceLoader::load(p_state->external_images_paths[t->get_src_image()]);
 		} else {
-			Ref<ImageTexture> imgTex;
-			imgTex.instance();
-			imgTex->create_from_image(p_state->images[t->get_src_image()]);
+			Ref<ImageTexture> img_tex;
+			img_tex.instance();
+			img_tex->create_from_image(p_state->images[t->get_src_image()]);
 
-			// Set texture filter and repeat based on sampler settings
+			// Set texture filter and repeat based on sampler settings. Only supported for embedded textures
 			const Ref<GLTFTextureSampler> sampler = _get_sampler_for_texture(p_state, i);
 			Texture::Flags flags = sampler->get_texture_flags();
-			imgTex->set_flags(flags);
+			img_tex->set_flags(flags);
 
-			tex = imgTex;
+			tex = img_tex;
 		}
 
 		p_state->texture_cache.insert(i, tex);
