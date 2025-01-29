@@ -159,7 +159,7 @@ Vector<Vector3> NavMap::get_path(Vector3 p_origin, Vector3 p_destination, bool p
 				const gd::Edge::Connection &connection = edge.connections[connection_index];
 
 				// Only consider the connection to another polygon if this polygon is in a region with compatible layers.
-				if ((p_navigation_layers & polygons[connection.polygon].owner->get_navigation_layers()) == 0) {
+				if ((!polygons[connection.polygon].owner || (p_navigation_layers & polygons[connection.polygon].owner->get_navigation_layers()) == 0)) {
 					continue;
 				}
 
