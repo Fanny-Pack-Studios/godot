@@ -42,6 +42,8 @@
 #include "joints/pin_joint_sw.h"
 #include "joints/slider_joint_sw.h"
 
+#include "modules/godot_tracy/profiler.h"
+
 #define FLUSH_QUERY_CHECK(m_object) \
 	ERR_FAIL_COND_MSG(m_object->get_space() && flushing_queries, "Can't change this state while flushing queries. Use call_deferred() or set_deferred() to change monitoring state instead.");
 
@@ -859,6 +861,7 @@ bool PhysicsServerSW::body_is_ray_pickable(RID p_body) const {
 }
 
 bool PhysicsServerSW::body_test_motion(RID p_body, const Transform &p_from, const Vector3 &p_motion, bool p_infinite_inertia, MotionResult *r_result, bool p_exclude_raycast_shapes, const Set<RID> &p_exclude) {
+	ZoneScopedN("body_test_motion");
 	BodySW *body = body_owner.get(p_body);
 	ERR_FAIL_COND_V(!body, false);
 	ERR_FAIL_COND_V(!body->get_space(), false);
@@ -866,7 +869,7 @@ bool PhysicsServerSW::body_test_motion(RID p_body, const Transform &p_from, cons
 
 	_update_shapes();
 
-	return body->get_space()->test_body_motion(body, p_from, p_motion, p_infinite_inertia, body->get_kinematic_margin(), r_result, p_exclude_raycast_shapes, p_exclude);
+ 	return body->get_space()->test_body_motion(body, p_from, p_motion, p_infinite_inertia, body->get_kinematic_margin(), r_result, p_exclude_raycast_shapes, p_exclude);
 }
 
 int PhysicsServerSW::body_test_ray_separation(RID p_body, const Transform &p_transform, bool p_infinite_inertia, Vector3 &r_recover_motion, SeparationResult *r_results, int p_result_max, float p_margin) {

@@ -46,6 +46,8 @@
 
 #include <stdlib.h>
 
+#include "modules/godot_tracy/profiler.h"
+
 #ifndef NO_THREADS
 #include "core/os/thread.h"
 #endif
@@ -717,6 +719,9 @@ bool NativeScriptInstance::has_method(const StringName &p_method) const {
 }
 
 Variant NativeScriptInstance::call(const StringName &p_method, const Variant **p_args, int p_argcount, Variant::CallError &r_error) {
+	ZoneScoped;
+	CharString c = String(p_method).utf8();
+	ZoneName(c.ptr(), c.size());
 	NativeScriptDesc *script_data = GET_SCRIPT_DESC();
 
 	while (script_data) {
@@ -884,6 +889,9 @@ ScriptLanguage *NativeScriptInstance::get_language() {
 }
 
 void NativeScriptInstance::call_multilevel(const StringName &p_method, const Variant **p_args, int p_argcount) {
+	ZoneScoped;
+	CharString c = String(p_method).utf8();
+	ZoneName(c.ptr(), c.size());
 	NativeScriptDesc *script_data = GET_SCRIPT_DESC();
 
 	while (script_data) {

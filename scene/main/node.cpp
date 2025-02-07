@@ -39,6 +39,7 @@
 #include "scene/resources/packed_scene.h"
 #include "scene/scene_string_names.h"
 #include "viewport.h"
+#include "modules/godot_tracy/profiler.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/editor_settings.h"
@@ -52,6 +53,9 @@ int Node::orphan_node_count = 0;
 void Node::_notification(int p_notification) {
 	switch (p_notification) {
 		case NOTIFICATION_PROCESS: {
+			ZoneScoped;
+			CharString c = (String(get_name()) + "_Process").utf8();
+			ZoneName(c.ptr(), c.size());
 			if (get_script_instance()) {
 				Variant time = get_process_delta_time();
 				const Variant *ptr[1] = { &time };
@@ -59,6 +63,9 @@ void Node::_notification(int p_notification) {
 			}
 		} break;
 		case NOTIFICATION_PHYSICS_PROCESS: {
+			ZoneScoped;
+			CharString c = (String(get_name()) + "_PhysicsProcess").utf8();
+			ZoneName(c.ptr(), c.size());
 			if (get_script_instance()) {
 				Variant time = get_physics_process_delta_time();
 				const Variant *ptr[1] = { &time };

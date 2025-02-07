@@ -34,6 +34,8 @@
 #include "core/project_settings.h"
 #include "physics_server_sw.h"
 
+#include "modules/godot_tracy/profiler.h"
+
 #define TEST_MOTION_MARGIN_MIN_VALUE 0.0001
 #define TEST_MOTION_MIN_CONTACT_DEPTH_FACTOR 0.05
 
@@ -729,6 +731,8 @@ bool SpaceSW::test_body_motion(BodySW *p_body, const Transform &p_from, const Ve
 	//this took about a week to get right..
 	//but is it right? who knows at this point..
 
+	ZoneScopedN("test_body_motion");
+
 	if (r_result) {
 		r_result->collider_id = 0;
 		r_result->collider_shape = 0;
@@ -737,26 +741,30 @@ bool SpaceSW::test_body_motion(BodySW *p_body, const Transform &p_from, const Ve
 	AABB body_aabb;
 	bool shapes_found = false;
 
-	for (int i = 0; i < p_body->get_shape_count(); i++) {
-		if (p_body->is_shape_disabled(i)) {
-			continue;
+
+	{
+		ZoneScopedN("Process Shapes");
+		for (int i = 0; i < p_body->get_shape_count(); i++) {
+			if (p_body->is_shape_disabled(i)) {
+				continue;
+			}
+
+			if (!shapes_found) {
+				body_aabb = p_body->get_shape_aabb(i);
+				shapes_found = true;
+			} else {
+				body_aabb = body_aabb.merge(p_body->get_shape_aabb(i));
+			}
 		}
 
 		if (!shapes_found) {
-			body_aabb = p_body->get_shape_aabb(i);
-			shapes_found = true;
-		} else {
-			body_aabb = body_aabb.merge(p_body->get_shape_aabb(i));
-		}
-	}
+			if (r_result) {
+				*r_result = PhysicsServer::MotionResult();
+				r_result->motion = p_motion;
+			}
 
-	if (!shapes_found) {
-		if (r_result) {
-			*r_result = PhysicsServer::MotionResult();
-			r_result->motion = p_motion;
+			return false;
 		}
-
-		return false;
 	}
 
 	real_t margin = MAX(p_margin, TEST_MOTION_MARGIN_MIN_VALUE);
@@ -775,6 +783,8 @@ bool SpaceSW::test_body_motion(BodySW *p_body, const Transform &p_from, const Ve
 	bool recovered = false;
 
 	{
+
+		ZoneScopedN("Step1");
 		//STEP 1, FREE BODY IF STUCK
 
 		const int max_results = 32;
@@ -867,6 +877,7 @@ bool SpaceSW::test_body_motion(BodySW *p_body, const Transform &p_from, const Ve
 
 	{
 		// STEP 2 ATTEMPT MOTION
+		ZoneScopedN("Step2");
 
 		AABB motion_aabb = body_aabb;
 		motion_aabb.position += p_motion;
@@ -898,6 +909,10 @@ bool SpaceSW::test_body_motion(BodySW *p_body, const Transform &p_from, const Ve
 
 			for (int i = 0; i < amount; i++) {
 				const CollisionObjectSW *col_obj = intersection_query_results[i];
+				CharString c = ("Intersection: " + ObjectDB::get_instance(col_obj->get_instance_id())->call("get_path").operator String()).utf8();
+				ZoneScoped;
+				ZoneName(c.ptr(), c.size());
+
 				if (p_exclude.has(col_obj->get_self())) {
 					continue;
 				}
@@ -931,6 +946,7 @@ bool SpaceSW::test_body_motion(BodySW *p_body, const Transform &p_from, const Ve
 				real_t hi = 1.0;
 				real_t fraction_coeff = 0.5;
 				for (int k = 0; k < 8; k++) { //steps should be customizable..
+					ZoneScopedN("Kinematic Solving");
 					real_t fraction = low + (hi - low) * fraction_coeff;
 
 					mshape.motion = body_shape_xform_inv.basis.xform(p_motion * fraction);
@@ -990,6 +1006,7 @@ bool SpaceSW::test_body_motion(BodySW *p_body, const Transform &p_from, const Ve
 	bool collided = false;
 
 	if (recovered || (safe < 1)) {
+		ZoneScopedN("Step3");
 		if (safe >= 1) {
 			best_shape = -1; //no best shape with cast, reset to -1
 		}

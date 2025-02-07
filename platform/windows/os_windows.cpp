@@ -53,6 +53,8 @@
 #include <regstr.h>
 #include <shlobj.h>
 
+#include "modules/godot_tracy/profiler.h"
+
 static const WORD MAX_CONSOLE_LINES = 1500;
 
 extern "C" {
@@ -3584,6 +3586,8 @@ void OS_Windows::run() {
 	main_loop->init();
 
 	while (!force_quit) {
+		FrameMark;
+		ZoneScoped;
 		process_events(); // get rid of pending events
 		if (Main::iteration())
 			break;

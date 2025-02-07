@@ -39,6 +39,8 @@
 #include "core/project_settings.h"
 #include "gdscript_compiler.h"
 
+#include "modules/godot_tracy/profiler.h"
+
 ///////////////////////////
 
 GDScriptNativeClass::GDScriptNativeClass(const StringName &p_name) {
@@ -669,6 +671,9 @@ void GDScript::get_members(Set<StringName> *p_members) {
 }
 
 Variant GDScript::call(const StringName &p_method, const Variant **p_args, int p_argcount, Variant::CallError &r_error) {
+	ZoneScoped;
+	CharString c = String(p_method).utf8();
+	ZoneName(c.ptr(), c.size());
 	GDScript *top = this;
 	while (top) {
 		Map<StringName, GDScriptFunction *>::Element *E = top->member_functions.find(p_method);
@@ -1224,6 +1229,10 @@ Variant GDScriptInstance::call(const StringName &p_method, const Variant **p_arg
 }
 
 void GDScriptInstance::call_multilevel(const StringName &p_method, const Variant **p_args, int p_argcount) {
+	ZoneScoped;
+	CharString c = String(p_method).utf8();
+	ZoneName(c.ptr(), c.size());
+
 	GDScript *sptr = script.ptr();
 	Variant::CallError ce;
 
