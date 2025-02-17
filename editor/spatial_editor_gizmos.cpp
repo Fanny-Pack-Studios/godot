@@ -717,7 +717,8 @@ bool EditorSpatialGizmo::intersect_ray(Camera *p_camera, const Point2 &p_point, 
 		Vector3 ray_dir = ai.basis.xform(p_camera->project_ray_normal(p_point)).normalized();
 		Vector3 rpos, rnorm;
 
-		if (collision_mesh->intersect_ray(ray_from, ray_dir, rpos, rnorm)) {
+		volatile auto ray = collision_mesh->intersect_ray(ray_from, ray_dir, rpos, rnorm);
+		if (ray) {
 			r_pos = gt.xform(rpos);
 			r_normal = gt.basis.xform(rnorm).normalized();
 			return true;

@@ -372,6 +372,7 @@ bool TriangleMesh::intersect_segment(const Vector3 &p_begin, const Vector3 &p_en
 	return inters;
 }
 
+#pragma optimize("", off)
 bool TriangleMesh::intersect_ray(const Vector3 &p_begin, const Vector3 &p_dir, Vector3 &r_point, Vector3 &r_normal) const {
 	uint32_t *stack = (uint32_t *)alloca(sizeof(int) * max_depth);
 
@@ -474,6 +475,7 @@ bool TriangleMesh::intersect_ray(const Vector3 &p_begin, const Vector3 &p_dir, V
 
 	return inters;
 }
+#pragma optimize("", on)
 
 bool TriangleMesh::intersect_convex_shape(const Plane *p_planes, int p_plane_count, const Vector3 *p_points, int p_point_count) const {
 	uint32_t *stack = (uint32_t *)alloca(sizeof(int) * max_depth);
