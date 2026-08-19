@@ -41,10 +41,14 @@
 class CryptoMbedTLS;
 class SSLContextMbedTLS;
 class CryptoKeyMbedTLS : public CryptoKey {
+	GDSOFTCLASS(CryptoKeyMbedTLS, CryptoKey);
+
 private:
 	mbedtls_pk_context pkey;
 	int locks = 0;
 	bool public_only = true;
+
+	int _parse_key(const uint8_t *p_buf, int p_size);
 
 public:
 	static CryptoKey *create();
@@ -73,6 +77,8 @@ public:
 };
 
 class X509CertificateMbedTLS : public X509Certificate {
+	GDSOFTCLASS(X509CertificateMbedTLS, X509Certificate);
+
 private:
 	mbedtls_x509_crt cert;
 	int locks;

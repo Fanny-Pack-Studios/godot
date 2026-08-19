@@ -68,7 +68,7 @@ Rect2 OccluderPolygon2D::_edit_get_rect() const {
 
 bool OccluderPolygon2D::_edit_is_selected_on_click(const Point2 &p_point, double p_tolerance) const {
 	if (closed) {
-		return Geometry::is_point_in_polygon(p_point, Variant(polygon));
+		return Geometry::is_point_in_polygon(p_point, polygon);
 	} else {
 		const real_t d = LINE_GRAB_WIDTH / 2 + p_tolerance;
 		PoolVector<Vector2>::Read points = polygon.read();
@@ -201,7 +201,7 @@ void LightOccluder2D::_notification(int p_what) {
 			VS::get_singleton()->canvas_light_occluder_attach_to_canvas(occluder, RID());
 		} break;
 		case NOTIFICATION_RESET_PHYSICS_INTERPOLATION: {
-			if (is_visible_in_tree() && is_physics_interpolated()) {
+			if (is_visible_in_tree() && is_physics_interpolated_and_enabled()) {
 				// Explicitly make sure the transform is up to date in VisualServer before
 				// resetting. This is necessary because NOTIFICATION_TRANSFORM_CHANGED
 				// is normally deferred, and a client change to transform will not always be sent

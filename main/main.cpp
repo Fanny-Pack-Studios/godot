@@ -82,7 +82,7 @@
 #include "editor/progress_dialog.h"
 #include "editor/project_manager.h"
 #include "editor/script_editor_debugger.h"
-#if defined(TOOLS_ENABLED) && !defined(NO_EDITOR_SPLASH)
+#ifndef NO_EDITOR_SPLASH
 #include "main/splash_editor.gen.h"
 #endif
 #endif
@@ -151,6 +151,7 @@ HashMap<Main::CLIScope, Vector<String>> forwardable_cli_arguments;
 static OS::VideoMode video_mode;
 static int init_screen = -1;
 static bool init_fullscreen = false;
+static bool init_non_ex_fs = false;
 static bool init_maximized = false;
 static bool init_windowed = false;
 static bool init_always_on_top = false;
@@ -332,6 +333,7 @@ void Main::print_help(const char *p_binary) {
 	OS::get_singleton()->print("  --disable-vsync-via-compositor   Disable vsync via the OS' window compositor (Windows only).\n");
 	OS::get_singleton()->print("  --enable-delta-smoothing         When vsync is enabled, enabled frame delta smoothing.\n");
 	OS::get_singleton()->print("  --disable-delta-smoothing        Disable frame delta smoothing.\n");
+	OS::get_singleton()->print("  --gpu-threaded                   Enable / disable graphics driver threaded optimizations ('true' or 'false').\n");
 	OS::get_singleton()->print("  --tablet-driver                  Tablet input driver (");
 	for (int i = 0; i < OS::get_singleton()->get_tablet_driver_count(); i++) {
 		if (i != 0) {
@@ -495,6 +497,8 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	bool force_res = false;
 	bool saw_vsync_via_compositor_override = false;
 	bool delta_smoothing_override = false;
+	String driver_threaded_optimizations_string;
+	bool graphics_driver_threaded_optimizations_override = false;
 #ifdef TOOLS_ENABLED
 	bool found_project = false;
 #endif
@@ -641,6 +645,10 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		} else if (I->get() == "-f" || I->get() == "--fullscreen") { // force fullscreen
 
 			init_fullscreen = true;
+		} else if (I->get() == "--nonexclusive-fullscreen") { // force fullscreen
+
+			init_fullscreen = true;
+			init_non_ex_fs = true;
 		} else if (I->get() == "-m" || I->get() == "--maximized") { // force maximized window
 
 			init_maximized = true;
@@ -935,6 +943,20 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 				OS::get_singleton()->print("Missing editor PID argument, aborting.\n");
 				goto error;
 			}
+		} else if (I->get() == "--gpu-threaded") {
+			if (I->next()) {
+				if (I->next()->get().to_lower() == "true") {
+					OS::get_singleton()->_set_graphics_driver_threaded_optimizations(OS::GRAPHICS_DRIVER_THREADED_OPTIMIZATIONS_ENABLED);
+					graphics_driver_threaded_optimizations_override = true;
+				} else if (I->next()->get().to_lower() == "false") {
+					OS::get_singleton()->_set_graphics_driver_threaded_optimizations(OS::GRAPHICS_DRIVER_THREADED_OPTIMIZATIONS_DISABLED);
+					graphics_driver_threaded_optimizations_override = true;
+				}
+				N = I->next()->next();
+			} else {
+				OS::get_singleton()->print("Missing gpu-threaded argument, aborting.\n");
+				goto error;
+			}
 		} else if (I->get() == "--disable-render-loop") {
 			disable_render_loop = true;
 		} else if (I->get() == "--fixed-fps") {
@@ -1141,6 +1163,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 	if (editor || project_manager) {
 		Engine::get_singleton()->set_editor_hint(true);
 		use_custom_res = false;
+		init_non_ex_fs = true;
 		input_map->load_default(); //keys for editor
 	} else {
 		input_map->load_from_globals(); //keys for game
@@ -1192,6 +1215,7 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		video_mode.resizable = GLOBAL_GET("display/window/size/resizable");
 		video_mode.borderless_window = GLOBAL_GET("display/window/size/borderless");
 		video_mode.fullscreen = GLOBAL_GET("display/window/size/fullscreen");
+		video_mode.non_ex_fs = GLOBAL_GET("display/window/size/use_nonexclusive_fullscreen");
 		video_mode.always_on_top = GLOBAL_GET("display/window/size/always_on_top");
 	}
 
@@ -1246,6 +1270,17 @@ Error Main::setup(const char *execpath, int argc, char *argv[], bool p_second_ph
 		rtm = GLOBAL_DEF("rendering/threads/thread_model", OS::RENDER_THREAD_SAFE);
 	}
 	GLOBAL_DEF("rendering/threads/thread_safe_bvh", false);
+
+	driver_threaded_optimizations_string = GLOBAL_DEF_RST("rendering/misc/compatibility/driver_threaded_optimizations", "DEFAULT");
+	ProjectSettings::get_singleton()->set_custom_property_info("rendering/misc/compatibility/driver_threaded_optimizations", PropertyInfo(Variant::STRING, "rendering/misc/compatibility/driver_threaded_optimizations", PROPERTY_HINT_ENUM, "DEFAULT,Disable,Enable"));
+
+	if (!graphics_driver_threaded_optimizations_override) {
+		if (driver_threaded_optimizations_string == "Disable") {
+			OS::get_singleton()->_set_graphics_driver_threaded_optimizations(OS::GRAPHICS_DRIVER_THREADED_OPTIMIZATIONS_DISABLED);
+		} else if (driver_threaded_optimizations_string == "Enable") {
+			OS::get_singleton()->_set_graphics_driver_threaded_optimizations(OS::GRAPHICS_DRIVER_THREADED_OPTIMIZATIONS_ENABLED);
+		}
+	}
 
 	if (rtm >= 0 && rtm < 3) {
 #ifdef NO_THREADS
@@ -1486,6 +1521,9 @@ Error Main::setup2(Thread::ID p_main_tid_override) {
 
 	if (init_screen != -1) {
 		OS::get_singleton()->set_current_screen(init_screen);
+	}
+	if (init_non_ex_fs) {
+		OS::get_singleton()->set_window_use_nonexclusive_fullscreen(true);
 	}
 	if (init_windowed) {
 		//do none..
@@ -1944,7 +1982,7 @@ bool Main::start() {
 		}
 	}
 
-	if (main_loop->is_class("SceneTree")) {
+	if (main_loop->derives_from<SceneTree>()) {
 		SceneTree *sml = Object::cast_to<SceneTree>(main_loop);
 
 #ifdef DEBUG_ENABLED
@@ -2049,6 +2087,8 @@ bool Main::start() {
 		EditorNode *editor_node = nullptr;
 		if (editor) {
 			editor_node = memnew(EditorNode);
+			EditorSettingsQuick::refresh();
+
 			sml->get_root()->add_child(editor_node);
 
 			if (_export_preset != "") {
@@ -2340,6 +2380,8 @@ bool Main::iteration() {
 	double step = advance.idle_step;
 	double scaled_step = step * time_scale;
 
+	VisualServer::get_singleton()->sync_and_halt();
+
 	Engine::get_singleton()->_frame_step = step;
 	Engine::get_singleton()->_physics_interpolation_fraction = advance.interpolation_fraction;
 
@@ -2374,9 +2416,11 @@ bool Main::iteration() {
 		// may be the same, and no interpolation takes place.
 		OS::get_singleton()->get_main_loop()->iteration_prepare();
 
-		PhysicsServer::get_singleton()->flush_queries();
-
 		Physics2DServer::get_singleton()->sync();
+
+		VisualServer::get_singleton()->thaw();
+
+		PhysicsServer::get_singleton()->flush_queries();
 		Physics2DServer::get_singleton()->flush_queries();
 
 		if (OS::get_singleton()->get_main_loop()->iteration(frame_slice * time_scale)) {
@@ -2387,6 +2431,8 @@ bool Main::iteration() {
 
 		NavigationServer::get_singleton_mut()->process(frame_slice * time_scale);
 		message_queue->flush();
+
+		VisualServer::get_singleton()->sync_and_halt();
 
 		PhysicsServer::get_singleton()->step(frame_slice * time_scale);
 
@@ -2402,6 +2448,8 @@ bool Main::iteration() {
 
 		Engine::get_singleton()->_in_physics = false;
 	}
+
+	VisualServer::get_singleton()->thaw();
 
 	if (InputDefault::get_singleton()->is_using_input_buffering() && agile_input_event_flushing) {
 		InputDefault::get_singleton()->flush_buffered_events();
@@ -2480,7 +2528,7 @@ bool Main::iteration() {
 				if (print_fps) {
 					print_line(vformat("Editor FPS: %d (%s mspf)", frames, rtos(1000.0 / frames).pad_decimals(2)));
 				}
-			} else if (print_fps || GLOBAL_GET("debug/settings/stdout/print_fps")) {
+			} else if (print_fps || GLOBAL_GET_CACHED(bool, "debug/settings/stdout/print_fps")) {
 				print_line(vformat("Project FPS: %d (%s mspf)", frames, rtos(1000.0 / frames).pad_decimals(2)));
 			}
 		} else {

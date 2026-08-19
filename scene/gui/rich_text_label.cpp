@@ -361,12 +361,6 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 				int ascent = font->get_ascent();
 				int descent = font->get_descent();
 
-				// Each BBCode tag is drawn individually, so we have to add the character spacing manually.
-				int spacing_char = 0;
-				if (visible_characters != 0) {
-					spacing_char = font->get_spacing_char();
-				}
-
 				Color color;
 				Color font_color_shadow;
 				bool underline = false;
@@ -453,6 +447,12 @@ int RichTextLabel::_process_line(ItemFrame *p_frame, const Vector2 &p_ofs, int &
 
 						end++;
 					}
+					// Each BBCode tag is drawn individually, so we have to add the character spacing manually.
+					int spacing_char = 0;
+					if (visible_characters != 0) {
+						spacing_char = font->get_spacing_char();
+					}
+
 					CHECK_HEIGHT(fh);
 					ENSURE_WIDTH(w + spacing_char);
 
@@ -1848,7 +1848,15 @@ void RichTextLabel::push_font(const Ref<Font> &p_font) {
 	ItemFont *item = memnew(ItemFont);
 
 	item->font = p_font;
+	item->owner = get_instance_id();
+	item->font->connect("changed", this, "_invalidate_fonts", Vector<Variant>(), CONNECT_REFERENCE_COUNTED);
+
 	_add_item(item, true);
+}
+
+void RichTextLabel::_invalidate_fonts() {
+	main->first_invalid_line = 0; //invalidate ALL
+	update();
 }
 
 void RichTextLabel::push_normal() {
@@ -2926,6 +2934,8 @@ void RichTextLabel::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_effects", "effects"), &RichTextLabel::set_effects);
 	ClassDB::bind_method(D_METHOD("get_effects"), &RichTextLabel::get_effects);
 	ClassDB::bind_method(D_METHOD("install_effect", "effect"), &RichTextLabel::install_effect);
+
+	ClassDB::bind_method(D_METHOD("_invalidate_fonts"), &RichTextLabel::_invalidate_fonts);
 
 	ADD_GROUP("BBCode", "bbcode_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "bbcode_enabled"), "set_use_bbcode", "is_using_bbcode");

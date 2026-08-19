@@ -152,7 +152,7 @@ void RoomManager::_preview_camera_update() {
 	RID scenario = world->get_scenario();
 
 	if (_godot_preview_camera_ID != (ObjectID)-1) {
-		Camera *cam = Object::cast_to<Camera>(ObjectDB::get_instance(_godot_preview_camera_ID));
+		Camera *cam = ObjectDB::get_instance<Camera>(_godot_preview_camera_ID);
 		if (!cam) {
 			_godot_preview_camera_ID = (ObjectID)-1;
 		} else {
@@ -784,7 +784,7 @@ void RoomManager::_generate_room_overlap_zones() {
 
 			memcpy(dest, &other->_planes[0], other->_planes.size() * sizeof(Plane));
 
-			Vector<Vector3> overlap_pts = Geometry::compute_convex_mesh_points(planes.ptr(), planes.size());
+			Vector<Vector3> overlap_pts = Geometry::compute_convex_mesh_points(Span<Plane>(planes.ptr(), planes.size()));
 
 			if (overlap_pts.size() < 4) {
 				continue;
@@ -1470,7 +1470,7 @@ bool RoomManager::_convert_room_hull_preliminary(Room *p_room, const Vector<Vect
 		AABB aabb;
 		aabb.create_from_points(p_room_pts);
 
-		LocalVector<Vector3> pts;
+		Vector<Vector3> pts;
 		Vector3 mins = aabb.position;
 		Vector3 maxs = mins + aabb.size;
 
@@ -1596,7 +1596,7 @@ bool RoomManager::_convert_room_hull_final(Room *p_room, const LocalVector<Porta
 	p_room->_bound_mesh_data = md_simplified;
 
 	// send bound to visual server
-	VisualServer::get_singleton()->room_set_bound(p_room->_room_rid, p_room->get_instance_id(), p_room->_planes, p_room->_aabb, md_simplified.vertices);
+	VisualServer::get_singleton()->room_set_bound(p_room->_room_rid, p_room->get_instance_id(), Vector<Plane>(p_room->_planes), p_room->_aabb, md_simplified.vertices);
 
 	return true;
 }
@@ -1642,7 +1642,7 @@ void RoomManager::_build_simplified_bound(const Room *p_room, Geometry::MeshData
 		return;
 	}
 
-	Vector<Vector3> pts = Geometry::compute_convex_mesh_points(&r_planes[0], r_planes.size(), 0.001);
+	Vector<Vector3> pts = Geometry::compute_convex_mesh_points(Span<Plane>(r_planes.ptr(), r_planes.size()), 0.001);
 	Error err = _build_room_convex_hull(p_room, pts, r_md);
 
 	if (err != OK) {

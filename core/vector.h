@@ -75,15 +75,20 @@ public:
 	};
 	void invert();
 
-	_FORCE_INLINE_ T *ptrw() { return _cowdata.ptrw(); }
-	_FORCE_INLINE_ const T *ptr() const { return _cowdata.ptr(); }
+	_FORCE_INLINE_ T *ptrw() _LIFETIME_BOUND_ { return _cowdata.ptrw(); }
+	_FORCE_INLINE_ const T *ptr() const _LIFETIME_BOUND_ { return _cowdata.ptr(); }
 	_FORCE_INLINE_ void clear() { resize(0); }
 	_FORCE_INLINE_ bool empty() const { return _cowdata.empty(); }
 
 	_FORCE_INLINE_ T get(int p_index) { return _cowdata.get(p_index); }
 	_FORCE_INLINE_ const T &get(int p_index) const { return _cowdata.get(p_index); }
 	_FORCE_INLINE_ void set(int p_index, const T &p_elem) { _cowdata.set(p_index, p_elem); }
+	_FORCE_INLINE_ void set(int p_index, T &&p_elem) { _cowdata.set(p_index, std::move(p_elem)); }
 	_FORCE_INLINE_ int size() const { return _cowdata.size(); }
+
+	_FORCE_INLINE_ operator Span<T>() const _LIFETIME_BOUND_ { return _cowdata.span(); }
+	_FORCE_INLINE_ Span<T> span() const _LIFETIME_BOUND_ { return _cowdata.span(); }
+
 	Error resize(int p_size) { return _cowdata.resize(p_size); }
 	_FORCE_INLINE_ const T &operator[](int p_index) const { return _cowdata.get(p_index); }
 	Error insert(int p_pos, T p_val) { return _cowdata.insert(p_pos, p_val); }
@@ -108,19 +113,26 @@ public:
 	}
 
 	void ordered_insert(const T &p_val) {
-		int i;
-		for (i = 0; i < _cowdata.size(); i++) {
-			if (p_val < operator[](i)) {
-				break;
-			};
-		};
-		insert(i, p_val);
+		int idx = span().bisect(p_val, false);
+		insert(idx, p_val);
 	}
 
 	_FORCE_INLINE_ Vector() {}
 	_FORCE_INLINE_ Vector(const Vector &p_from) { _cowdata._ref(p_from._cowdata); }
+	_FORCE_INLINE_ explicit Vector(Span<T> p_from) :
+			_cowdata(p_from) {}
 	inline Vector &operator=(const Vector &p_from) {
 		_cowdata._ref(p_from._cowdata);
+		return *this;
+	}
+
+	_FORCE_INLINE_ Vector(Vector<T> &&p_from) :
+			_cowdata(std::move(p_from._cowdata)) {}
+
+	_FORCE_INLINE_ Vector<T> &operator=(Vector<T> &&p_from) {
+		if (this != &p_from) {
+			_cowdata = std::move(p_from._cowdata);
+		}
 		return *this;
 	}
 
@@ -164,9 +176,13 @@ public:
 
 template <class T>
 void Vector<T>::invert() {
-	for (int i = 0; i < size() / 2; i++) {
-		T *p = ptrw();
-		SWAP(p[i], p[size() - i - 1]);
+	int len = size();
+	if (len <= 1) {
+		return;
+	}
+	T *p = ptrw();
+	for (int i = 0; i < len / 2; i++) {
+		SWAP(p[i], p[len - i - 1]);
 	}
 }
 
@@ -178,8 +194,11 @@ void Vector<T>::append_array(Vector<T> p_other) {
 	}
 	const int bs = size();
 	resize(bs + ds);
+
+	T *w = ptrw();
+	const T *r = p_other.ptr();
 	for (int i = 0; i < ds; ++i) {
-		ptrw()[bs + i] = p_other[i];
+		w[bs + i] = r[i];
 	}
 }
 
@@ -187,7 +206,7 @@ template <class T>
 bool Vector<T>::push_back(T p_elem) {
 	Error err = resize(size() + 1);
 	ERR_FAIL_COND_V(err, true);
-	set(size() - 1, p_elem);
+	set(size() - 1, std::move(p_elem));
 
 	return false;
 }

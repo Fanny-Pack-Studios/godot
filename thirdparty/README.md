@@ -34,8 +34,8 @@ Files extracted from upstream source:
 ## certs
 
 - Upstream: Mozilla, via https://github.com/bagder/ca-bundle
-- Version: git (4d3fe6683f651d96be1bbef316b201e9b33b274d, 2024),
-  generated from mozilla-release changeset b8ea2342548b8571e58f9176d9555ccdb5ec199f
+- Version: git (bcc414c5b5282f9321651bf71dc1e254ae87e3f8, 2025),
+  generated from mozilla-release changeset 60d4997d339bb7ac6d033819ac50dcad4b9be09d
 - License: MPL 2.0
 
 Files extracted from upstream source:
@@ -191,7 +191,7 @@ Files extracted from upstream source:
 ## libpng
 
 - Upstream: http://libpng.org/pub/png/libpng.html
-- Version: 1.6.43 (ed217e3e601d8e462f7fd1e04bed43ac42212429, 2024)
+- Version: 1.6.58 (3061454d980de7d53608f594194cfac722721d2a, 2026)
 - License: libpng/zlib
 
 Files extracted from upstream source:
@@ -220,6 +220,7 @@ Files extracted from upstream source:
 Important: Some files have Godot-made changes.
 They are marked with `// -- GODOT start --` and `// -- GODOT end --`
 comments.
+A patch is included to fix CVE-2019-2126 in libwebm.
 
 
 ## libtheora
@@ -283,20 +284,26 @@ Files extracted from upstream source:
 ## mbedtls
 
 - Upstream: https://github.com/Mbed-TLS/mbedtls
-- Version: 2.28.9 (5e146adef63b326b04282252639bebc2730939c6, 2024)
+- Version: 3.6.7 (068ff080b369adfac81509f9b57b2afabaf82dc5, 2026)
 - License: Apache 2.0
 
 File extracted from upstream release tarball:
 
 - All `.h` from `include/mbedtls/` to `thirdparty/mbedtls/include/mbedtls/`
-  except `config_psa.h` and `psa_util.h`
-- All `.c` and `.h` from `library/` to `thirdparty/mbedtls/library/` except
-  those starting with `psa_*`
+  and all `.h` from `include/psa/` to `thirdparty/mbedtls/include/psa/`
+- From `library/` to `thirdparty/mbedtls/library/`:
+  - All `.c` and `.h` files
+  - Except `bignum_mod.c`, `block_cipher.c`, `ecp_curves_new.c`, `lmots.c`,
+    `lms.c`
 - The `LICENSE` file (edited to keep only the Apache 2.0 variant)
-- Applied the patch `windows-arm64-hardclock.diff` to fix Windows ARM64 build
-  Applied the patch `windows-entropy-bcrypt.diff` to fix Windows Store support
 - Added 2 files `godot_core_mbedtls_platform.c` and `godot_core_mbedtls_config.h`
-  providing configuration for light bundling with core.
+  providing configuration for light bundling with core
+- Added 2 files `godot_module_mbedtls_config.h` and `threading_alt.h`
+  to customize the build configuration when bundling the full library
+
+Patches:
+  
+- `0001-msvc-2019-psa-redeclaration.patch` (GH-90535)
 
 
 ## minimp3

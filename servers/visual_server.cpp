@@ -873,7 +873,7 @@ uint32_t VisualServer::mesh_surface_get_format_stride(uint32_t p_format, int p_v
 }
 
 void VisualServer::mesh_surface_make_offsets_from_format(uint32_t p_format, int p_vertex_len, int p_index_len, uint32_t *r_offsets, uint32_t *r_strides) const {
-	bool use_split_stream = GLOBAL_GET("rendering/misc/mesh_storage/split_stream") && !(p_format & VS::ARRAY_FLAG_USE_DYNAMIC_UPDATE);
+	bool use_split_stream = GLOBAL_GET_CACHED(bool, "rendering/misc/mesh_storage/split_stream") && !(p_format & VS::ARRAY_FLAG_USE_DYNAMIC_UPDATE);
 
 	int attributes_base_offset = 0;
 	int attributes_stride = 0;
@@ -1251,7 +1251,7 @@ bool VisualServer::_mesh_find_format(VS::PrimitiveType p_primitive, const Array 
 }
 
 uint32_t VisualServer::mesh_find_format_from_arrays(PrimitiveType p_primitive, const Array &p_arrays, const Array &p_blend_shapes, uint32_t p_compress_format) {
-	bool use_split_stream = GLOBAL_GET("rendering/misc/mesh_storage/split_stream") && !(p_compress_format & VS::ARRAY_FLAG_USE_DYNAMIC_UPDATE);
+	bool use_split_stream = GLOBAL_GET_CACHED(bool, "rendering/misc/mesh_storage/split_stream") && !(p_compress_format & VS::ARRAY_FLAG_USE_DYNAMIC_UPDATE);
 
 	uint32_t offsets[VS::ARRAY_MAX];
 
@@ -1271,7 +1271,7 @@ uint32_t VisualServer::mesh_find_format_from_arrays(PrimitiveType p_primitive, c
 }
 
 void VisualServer::mesh_add_surface_from_arrays(RID p_mesh, PrimitiveType p_primitive, const Array &p_arrays, const Array &p_blend_shapes, uint32_t p_compress_format) {
-	bool use_split_stream = GLOBAL_GET("rendering/misc/mesh_storage/split_stream") && !(p_compress_format & VS::ARRAY_FLAG_USE_DYNAMIC_UPDATE);
+	bool use_split_stream = GLOBAL_GET_CACHED(bool, "rendering/misc/mesh_storage/split_stream") && !(p_compress_format & VS::ARRAY_FLAG_USE_DYNAMIC_UPDATE);
 
 	uint32_t offsets[VS::ARRAY_MAX];
 
@@ -1341,7 +1341,7 @@ void VisualServer::mesh_add_surface_from_arrays(RID p_mesh, PrimitiveType p_prim
 }
 
 Array VisualServer::_get_array_from_surface(uint32_t p_format, PoolVector<uint8_t> p_vertex_data, int p_vertex_len, PoolVector<uint8_t> p_index_data, int p_index_len) const {
-	bool use_split_stream = GLOBAL_GET("rendering/misc/mesh_storage/split_stream") && !(p_format & VS::ARRAY_FLAG_USE_DYNAMIC_UPDATE);
+	bool use_split_stream = GLOBAL_GET_CACHED(bool, "rendering/misc/mesh_storage/split_stream") && !(p_format & VS::ARRAY_FLAG_USE_DYNAMIC_UPDATE);
 
 	uint32_t offsets[ARRAY_MAX];
 	uint32_t strides[VS::ARRAY_MAX];
@@ -1967,6 +1967,7 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("multimesh_set_physics_interpolated", "multimesh", "interpolated"), &VisualServer::multimesh_set_physics_interpolated);
 	ClassDB::bind_method(D_METHOD("multimesh_set_physics_interpolation_quality", "multimesh", "quality"), &VisualServer::multimesh_set_physics_interpolation_quality);
 	ClassDB::bind_method(D_METHOD("multimesh_instance_reset_physics_interpolation", "multimesh", "index"), &VisualServer::multimesh_instance_reset_physics_interpolation);
+	ClassDB::bind_method(D_METHOD("multimesh_instances_reset_physics_interpolation", "multimesh"), &VisualServer::multimesh_instances_reset_physics_interpolation);
 #ifndef _3D_DISABLED
 	ClassDB::bind_method(D_METHOD("immediate_create"), &VisualServer::immediate_create);
 	ClassDB::bind_method(D_METHOD("immediate_begin", "immediate", "primitive", "texture"), &VisualServer::immediate_begin, DEFVAL(RID()));
@@ -2095,6 +2096,7 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("camera_set_orthogonal", "camera", "size", "z_near", "z_far"), &VisualServer::camera_set_orthogonal);
 	ClassDB::bind_method(D_METHOD("camera_set_frustum", "camera", "size", "offset", "z_near", "z_far"), &VisualServer::camera_set_frustum);
 	ClassDB::bind_method(D_METHOD("camera_set_transform", "camera", "transform"), &VisualServer::camera_set_transform);
+	ClassDB::bind_method(D_METHOD("camera_set_blob_focus_position", "camera", "position"), &VisualServer::camera_set_blob_focus_position);
 	ClassDB::bind_method(D_METHOD("camera_set_cull_mask", "camera", "layers"), &VisualServer::camera_set_cull_mask);
 	ClassDB::bind_method(D_METHOD("camera_set_environment", "camera", "env"), &VisualServer::camera_set_environment);
 	ClassDB::bind_method(D_METHOD("camera_set_use_vertical_aspect", "camera", "enable"), &VisualServer::camera_set_use_vertical_aspect);
@@ -2172,8 +2174,6 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("instance_set_scenario", "instance", "scenario"), &VisualServer::instance_set_scenario);
 	ClassDB::bind_method(D_METHOD("instance_set_layer_mask", "instance", "mask"), &VisualServer::instance_set_layer_mask);
 	ClassDB::bind_method(D_METHOD("instance_set_transform", "instance", "transform"), &VisualServer::instance_set_transform);
-	ClassDB::bind_method(D_METHOD("instance_set_interpolated", "instance", "interpolated"), &VisualServer::instance_set_interpolated);
-	ClassDB::bind_method(D_METHOD("instance_reset_physics_interpolation", "instance"), &VisualServer::instance_reset_physics_interpolation);
 	ClassDB::bind_method(D_METHOD("instance_attach_object_instance_id", "instance", "id"), &VisualServer::instance_attach_object_instance_id);
 	ClassDB::bind_method(D_METHOD("instance_set_blend_shape_weight", "instance", "shape", "weight"), &VisualServer::instance_set_blend_shape_weight);
 	ClassDB::bind_method(D_METHOD("instance_set_surface_material", "instance", "surface", "material"), &VisualServer::instance_set_surface_material);
@@ -2191,6 +2191,11 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("instances_cull_aabb", "aabb", "scenario"), &VisualServer::_instances_cull_aabb_bind, DEFVAL(RID()));
 	ClassDB::bind_method(D_METHOD("instances_cull_ray", "from", "to", "scenario"), &VisualServer::_instances_cull_ray_bind, DEFVAL(RID()));
 	ClassDB::bind_method(D_METHOD("instances_cull_convex", "convex", "scenario"), &VisualServer::_instances_cull_convex_bind, DEFVAL(RID()));
+
+	ClassDB::bind_method(D_METHOD("blob_shadows_set_range", "range"), &VisualServer::blob_shadows_set_range);
+	ClassDB::bind_method(D_METHOD("blob_shadows_set_gamma", "gamma"), &VisualServer::blob_shadows_set_gamma);
+	ClassDB::bind_method(D_METHOD("blob_shadows_set_intensity", "intensity"), &VisualServer::blob_shadows_set_intensity);
+
 #endif
 	ClassDB::bind_method(D_METHOD("canvas_create"), &VisualServer::canvas_create);
 	ClassDB::bind_method(D_METHOD("canvas_set_item_mirroring", "canvas", "item", "mirroring"), &VisualServer::canvas_set_item_mirroring);
@@ -2620,7 +2625,7 @@ void VisualServer::mesh_add_surface_from_mesh_data(RID p_mesh, const Geometry::M
 	mesh_add_surface_from_arrays(p_mesh, PRIMITIVE_TRIANGLES, d);
 }
 
-void VisualServer::mesh_add_surface_from_planes(RID p_mesh, const PoolVector<Plane> &p_planes) {
+void VisualServer::mesh_add_surface_from_planes(RID p_mesh, PoolVector<Plane> p_planes) {
 	Geometry::MeshData mdata = Geometry::build_convex_mesh(p_planes);
 	mesh_add_surface_from_mesh_data(p_mesh, mdata);
 }

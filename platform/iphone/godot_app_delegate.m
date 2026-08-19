@@ -31,6 +31,7 @@
 #import "godot_app_delegate.h"
 
 #import "app_delegate.h"
+#import "godot_scene_delegate.h"
 
 @interface GodotApplicalitionDelegate ()
 
@@ -46,7 +47,7 @@ static NSMutableArray<ApplicationDelegateService *> *services = nil;
 
 + (void)load {
 	services = [NSMutableArray new];
-	[services addObject:[AppDelegate new]];
+	[services addObject:[AppDelegate getSingleton]];
 }
 
 + (void)addService:(ApplicationDelegateService *)service {
@@ -63,7 +64,7 @@ static NSMutableArray<ApplicationDelegateService *> *services = nil;
 - (UIWindow *)window {
 	UIWindow *result = nil;
 
-	for (ApplicationDelegateService *service in services) {
+	for (SceneDelegateService *service in [SceneDelegate services]) {
 		if (![service respondsToSelector:_cmd]) {
 			continue;
 		}
@@ -456,12 +457,15 @@ static NSMutableArray<ApplicationDelegateService *> *services = nil;
 	}
 }
 
-/* Handled By Info.plist file for now
-
 // MARK: Interface Geometry
 
-- (UIInterfaceOrientationMask)application:(UIApplication *)application supportedInterfaceOrientationsForWindow:(UIWindow *)window {}
+- (UISceneConfiguration *)application:(UIApplication *)application configurationForConnectingSceneSession:(UISceneSession *)connectingSceneSession options:(UISceneConnectionOptions *)options API_AVAILABLE(ios(13.0), tvos(13.0)) {
+	UISceneConfiguration *config = [[UISceneConfiguration alloc] initWithName:@"Default Configuration" sessionRole:connectingSceneSession.role];
+	config.delegateClass = [SceneDelegate class];
+	return config;
+}
 
-*/
+- (void)application:(UIApplication *)application didDiscardSceneSessions:(NSSet<UISceneSession *> *)sceneSessions API_AVAILABLE(ios(13.0), tvos(13.0)) {
+}
 
 @end

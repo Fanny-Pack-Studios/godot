@@ -233,7 +233,7 @@ void ShaderMaterial::_bind_methods() {
 
 void ShaderMaterial::get_argument_options(const StringName &p_function, int p_idx, List<String> *r_options) const {
 #ifdef TOOLS_ENABLED
-	const String quote_style = EDITOR_GET("text_editor/completion/use_single_quotes") ? "'" : "\"";
+	const String quote_style = EditorSettingsQuick::get_text_editor_completion_use_single_quotes() ? "'" : "\"";
 #else
 	const String quote_style = "\"";
 #endif
@@ -487,6 +487,9 @@ void Material3D::_update_shader() {
 	}
 	if (flags[FLAG_DONT_RECEIVE_SHADOWS]) {
 		code += ",shadows_disabled";
+	}
+	if (flags[FLAG_DONT_RECEIVE_BLOB_SHADOWS]) {
+		code += ",blob_shadows_disabled";
 	}
 	if (flags[FLAG_DISABLE_AMBIENT_LIGHT]) {
 		code += ",ambient_light_disabled";
@@ -2118,6 +2121,7 @@ void Material3D::_bind_methods() {
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "flags_fixed_size"), "set_flag", "get_flag", FLAG_FIXED_SIZE);
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "flags_albedo_tex_force_srgb"), "set_flag", "get_flag", FLAG_ALBEDO_TEXTURE_FORCE_SRGB);
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "flags_do_not_receive_shadows"), "set_flag", "get_flag", FLAG_DONT_RECEIVE_SHADOWS);
+	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "flags_do_not_receive_blob_shadows"), "set_flag", "get_flag", FLAG_DONT_RECEIVE_BLOB_SHADOWS);
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "flags_disable_ambient_light"), "set_flag", "get_flag", FLAG_DISABLE_AMBIENT_LIGHT);
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "flags_ensure_correct_normals"), "set_flag", "get_flag", FLAG_ENSURE_CORRECT_NORMALS);
 	ADD_PROPERTYI(PropertyInfo(Variant::BOOL, "flags_albedo_tex_msdf"), "set_flag", "get_flag", FLAG_ALBEDO_TEXTURE_SDF);
@@ -2320,6 +2324,7 @@ void Material3D::_bind_methods() {
 	BIND_ENUM_CONSTANT(FLAG_TRIPLANAR_USE_WORLD);
 	BIND_ENUM_CONSTANT(FLAG_ALBEDO_TEXTURE_FORCE_SRGB);
 	BIND_ENUM_CONSTANT(FLAG_DONT_RECEIVE_SHADOWS);
+	BIND_ENUM_CONSTANT(FLAG_DONT_RECEIVE_BLOB_SHADOWS);
 	BIND_ENUM_CONSTANT(FLAG_DISABLE_AMBIENT_LIGHT);
 	BIND_ENUM_CONSTANT(FLAG_ENSURE_CORRECT_NORMALS);
 	BIND_ENUM_CONSTANT(FLAG_USE_SHADOW_TO_OPACITY);
@@ -2425,11 +2430,11 @@ Material3D::Material3D(bool p_orm) :
 	detail_blend_mode = BLEND_MODE_MIX;
 	depth_draw_mode = DEPTH_DRAW_OPAQUE_ONLY;
 	cull_mode = CULL_BACK;
-	for (int i = 0; i < FLAG_MAX; i++) {
+	for (uint32_t i = 0; i < FLAG_MAX; i++) {
 		flags[i] = false;
 	}
 
-	force_vertex_shading = GLOBAL_GET("rendering/quality/shading/force_vertex_shading");
+	force_vertex_shading = GLOBAL_GET_CACHED(bool, "rendering/quality/shading/force_vertex_shading");
 
 	diffuse_mode = DIFFUSE_BURLEY;
 	specular_mode = SPECULAR_SCHLICK_GGX;

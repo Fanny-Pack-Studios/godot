@@ -197,8 +197,6 @@ def configure(env):
             "-framework",
             "OpenGL",
             "-framework",
-            "AGL",
-            "-framework",
             "AudioUnit",
             "-framework",
             "CoreAudio",
@@ -215,6 +213,8 @@ def configure(env):
             "CoreMedia",
             "-framework",
             "CoreVideo",
+            "-framework",
+            "Security",
         ]
     )
     env.Append(LIBS=["pthread"])

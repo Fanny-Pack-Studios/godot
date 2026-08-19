@@ -465,12 +465,12 @@ bool MergingTool::clean_mesh_instance(MeshInstance &p_mi) {
 
 int MergingTool::_clean_mesh_surface(const String &p_source_name, const Transform &p_xform, Ref<Mesh> &p_rmesh, int p_surface_id, Ref<ArrayMesh> r_dest_mesh) {
 	Array arrays = p_rmesh->surface_get_arrays(p_surface_id);
-	LocalVector<Vector3> verts = PoolVector<Vector3>(arrays[VS::ARRAY_VERTEX]);
+	LocalVector<Vector3> verts(PoolVector<Vector3>(arrays[VS::ARRAY_VERTEX]).span());
 	if (!verts.size()) {
 		// Early out if there are no vertices, no point in doing anything else.
 		return 0;
 	}
-	LocalVector<int> indices = PoolVector<int>(arrays[VS::ARRAY_INDEX]);
+	LocalVector<int> indices(PoolVector<int>(arrays[VS::ARRAY_INDEX]).span());
 
 	// Transform verts to world space.
 	for (uint32_t n = 0; n < verts.size(); n++) {
@@ -505,7 +505,7 @@ int MergingTool::_clean_mesh_surface(const String &p_source_name, const Transfor
 	return 0;
 }
 
-bool MergingTool::_ensure_indices_valid(LocalVector<int> &r_indices, const PoolVector<Vector3> &p_verts) {
+bool MergingTool::_ensure_indices_valid(LocalVector<int> &r_indices, const LocalVector<Vector3> &p_verts) {
 	// No indices? create some.
 	if (!r_indices.size()) {
 #ifdef TOOLS_ENABLED
@@ -535,7 +535,7 @@ bool MergingTool::_ensure_indices_valid(LocalVector<int> &r_indices, const PoolV
 }
 
 // Check for invalid tris, or make a list of the valid triangles, depending on whether r_inds is set.
-bool MergingTool::_check_for_valid_indices(const LocalVector<int> &p_inds, const PoolVector<Vector3> &p_verts, LocalVector<int> *r_inds) {
+bool MergingTool::_check_for_valid_indices(const LocalVector<int> &p_inds, const LocalVector<Vector3> &p_verts, LocalVector<int> *r_inds) {
 	int nTris = p_inds.size();
 	nTris /= 3;
 	int indCount = 0;
@@ -845,7 +845,7 @@ bool MergingTool::join_mesh_surface(const MeshInstance &p_source_mi, uint32_t p_
 }
 
 // No compat checking, no renaming.
-bool MergingTool::join_meshes(MeshInstance &r_dest_mi, Vector<MeshInstance *> p_list) {
+bool MergingTool::join_meshes(MeshInstance &r_dest_mi, LocalVector<MeshInstance *> p_list) {
 	if (p_list.size() < 1) {
 		// Should not happen but just in case...
 		return false;

@@ -32,12 +32,19 @@
 #define TYPEDEFS_H
 
 #include <stddef.h>
+#include <utility>
 
 /**
  * Basic definitions and simple functions to be used everywhere.
  */
 
 #include "platform_config.h"
+
+#if defined(__has_cpp_attribute)
+#define GD_HAS_CPP_ATTRIBUTE(m_feature) __has_cpp_attribute(m_feature)
+#else
+#define GD_HAS_CPP_ATTRIBUTE(m_feature) 0
+#endif
 
 #ifndef _STR
 #define _STR(m_x) #m_x
@@ -65,6 +72,20 @@
 #define _FORCE_INLINE_ inline
 #else
 #define _FORCE_INLINE_ _ALWAYS_INLINE_
+#endif
+
+#endif
+
+// Should never inline.
+#ifndef _NO_INLINE_
+#if defined(__GNUC__) && (__GNUC__ >= 4)
+#define _NO_INLINE_ __attribute__((noinline))
+#elif defined(__llvm__)
+#define _NO_INLINE_ __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define _NO_INLINE_ __declspec(noinline)
+#else
+#define _NO_INLINE_
 #endif
 
 #endif
@@ -108,6 +129,18 @@
 #else
 #define _NO_DISCARD_CLASS_
 #endif
+#endif
+
+#if GD_HAS_CPP_ATTRIBUTE(clang::lifetimebound)
+#define _LIFETIME_BOUND_ [[clang::lifetimebound]]
+#elif GD_HAS_CPP_ATTRIBUTE(gnu::lifetimebound)
+#define _LIFETIME_BOUND_ [[gnu::lifetimebound]]
+#elif GD_HAS_CPP_ATTRIBUTE(msvc::lifetimebound)
+#define _LIFETIME_BOUND_ [[msvc::lifetimebound]]
+#elif GD_HAS_CPP_ATTRIBUTE(lifetimebound)
+#define _LIFETIME_BOUND_ [[lifetimebound]]
+#else
+#define _LIFETIME_BOUND_
 #endif
 
 //custom, gcc-safe offsetof, because gcc complains a lot.
@@ -175,15 +208,7 @@ T *_nullptr() {
 
 /** Generic swap template */
 #ifndef SWAP
-
-#define SWAP(m_x, m_y) __swap_tmpl((m_x), (m_y))
-template <class T>
-inline void __swap_tmpl(T &x, T &y) {
-	T aux = x;
-	x = y;
-	y = aux;
-}
-
+#define SWAP(m_x, m_y) std::swap((m_x), (m_y))
 #endif //swap
 
 /* clang-format off */

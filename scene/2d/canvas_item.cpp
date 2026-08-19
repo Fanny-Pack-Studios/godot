@@ -590,7 +590,11 @@ void CanvasItem::_notification(int p_what) {
 			if (parent) {
 				CanvasItem *ci = Object::cast_to<CanvasItem>(parent);
 				if (ci) {
-					C = ci->children_items.push_back(this);
+					data.index_in_parent = ci->data.canvas_item_children.size();
+					ci->data.canvas_item_children.push_back(this);
+				} else if (data.index_in_parent != UINT32_MAX) {
+					data.index_in_parent = UINT32_MAX;
+					ERR_PRINT("CanvasItem ENTER_TREE detected without EXIT_TREE, recovering.");
 				}
 			}
 			_enter_canvas();
@@ -616,14 +620,32 @@ void CanvasItem::_notification(int p_what) {
 				get_tree()->xform_change_list.remove(&xform_change);
 			}
 			_exit_canvas();
-			if (C) {
-				Object::cast_to<CanvasItem>(get_parent())->children_items.erase(C);
-				C = nullptr;
+
+			CanvasItem *parent = Object::cast_to<CanvasItem>(get_parent());
+			if (parent) {
+				if (data.index_in_parent != UINT32_MAX) {
+					// Aliases
+					uint32_t c = data.index_in_parent;
+					LocalVector<CanvasItem *> &parent_children = parent->data.canvas_item_children;
+
+					parent_children.remove_unordered(c);
+
+					// After unordered remove, we need to inform the moved child
+					// what their new id is in the parent children list.
+					if (parent_children.size() > c) {
+						parent_children[c]->data.index_in_parent = c;
+					}
+
+				} else {
+					ERR_PRINT("CanvasItem index_in_parent unset at EXIT_TREE.");
+				}
 			}
+			data.index_in_parent = UINT32_MAX;
+
 			global_invalid = true;
 		} break;
 		case NOTIFICATION_RESET_PHYSICS_INTERPOLATION: {
-			if (is_visible_in_tree() && is_physics_interpolated()) {
+			if (is_visible_in_tree() && is_physics_interpolated_and_enabled()) {
 				VisualServer::get_singleton()->canvas_item_reset_physics_interpolation(canvas_item);
 			}
 		} break;
@@ -702,6 +724,7 @@ void CanvasItem::set_as_toplevel(bool p_toplevel) {
 	_enter_canvas();
 
 	_notify_transform();
+	reset_physics_interpolation();
 }
 
 bool CanvasItem::is_set_as_toplevel() const {
@@ -1006,12 +1029,13 @@ void CanvasItem::_notify_transform(CanvasItem *p_node) {
 		}
 	}
 
-	for (List<CanvasItem *>::Element *E = p_node->children_items.front(); E; E = E->next()) {
-		CanvasItem *ci = E->get();
-		if (ci->toplevel) {
-			continue;
+	CanvasItem **children = p_node->data.canvas_item_children.ptr();
+
+	for (uint32_t n = 0; n < p_node->data.canvas_item_children.size(); n++) {
+		CanvasItem *ci = children[n];
+		if (!ci->toplevel) {
+			_notify_transform(ci);
 		}
-		_notify_transform(ci);
 	}
 }
 
@@ -1346,6 +1370,8 @@ int CanvasItem::get_canvas_layer() const {
 
 CanvasItem::CanvasItem() :
 		xform_change(this) {
+	_define_ancestry(AncestralClass::CANVAS_ITEM);
+
 	canvas_item = RID_PRIME(VisualServer::get_singleton()->canvas_item_create());
 	visible = true;
 	pending_update = false;
@@ -1364,8 +1390,6 @@ CanvasItem::CanvasItem() :
 	notify_transform = false;
 	font_sdf_selected = false;
 	light_mask = 1;
-
-	C = nullptr;
 }
 
 CanvasItem::~CanvasItem() {

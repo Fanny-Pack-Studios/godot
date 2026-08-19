@@ -156,6 +156,9 @@ public:
 
 	PoolVector<uint8_t>::Write write_lock;
 
+	// Use this, NOT write_lock.ptr() (because that will be NULL for zero size images).
+	bool _is_locked() const { return write_lock.is_active(); }
+
 protected:
 	static void _bind_methods();
 
@@ -265,7 +268,7 @@ public:
 	 */
 	bool empty() const;
 
-	PoolVector<uint8_t> get_data() const;
+	const PoolVector<uint8_t> &get_data() const;
 
 	Error load(const String &p_path);
 	Error save_png(const String &p_path) const;

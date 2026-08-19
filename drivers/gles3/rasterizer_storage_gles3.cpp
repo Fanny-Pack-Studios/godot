@@ -2250,6 +2250,7 @@ void RasterizerStorageGLES3::_update_shader(Shader *p_shader) const {
 			p_shader->spatial.uses_discard = false;
 			p_shader->spatial.unshaded = false;
 			p_shader->spatial.no_depth_test = false;
+			p_shader->spatial.no_blob_shadows = false;
 			p_shader->spatial.uses_sss = false;
 			p_shader->spatial.uses_time = false;
 			p_shader->spatial.uses_vertex_lighting = false;
@@ -2280,6 +2281,7 @@ void RasterizerStorageGLES3::_update_shader(Shader *p_shader) const {
 
 			shaders.actions_scene.render_mode_flags["unshaded"] = &p_shader->spatial.unshaded;
 			shaders.actions_scene.render_mode_flags["depth_test_disable"] = &p_shader->spatial.no_depth_test;
+			shaders.actions_scene.render_mode_flags["blob_shadows_disabled"] = &p_shader->spatial.no_blob_shadows;
 
 			shaders.actions_scene.render_mode_flags["vertex_lighting"] = &p_shader->spatial.uses_vertex_lighting;
 
@@ -3374,7 +3376,7 @@ RID RasterizerStorageGLES3::mesh_create() {
 	return mesh_owner.make_rid(mesh);
 }
 
-void RasterizerStorageGLES3::mesh_add_surface(RID p_mesh, uint32_t p_format, VS::PrimitiveType p_primitive, const PoolVector<uint8_t> &p_array, int p_vertex_count, const PoolVector<uint8_t> &p_index_array, int p_index_count, const AABB &p_aabb, const Vector<PoolVector<uint8_t>> &p_blend_shapes, const Vector<AABB> &p_bone_aabbs) {
+void RasterizerStorageGLES3::mesh_add_surface(RID p_mesh, uint32_t p_format, VS::PrimitiveType p_primitive, PoolVector<uint8_t> p_array, int p_vertex_count, PoolVector<uint8_t> p_index_array, int p_index_count, const AABB &p_aabb, const Vector<PoolVector<uint8_t>> &p_blend_shapes, const Vector<AABB> &p_bone_aabbs) {
 	PoolVector<uint8_t> array = p_array;
 
 	Mesh *mesh = mesh_owner.getornull(p_mesh);
@@ -3389,7 +3391,7 @@ void RasterizerStorageGLES3::mesh_add_surface(RID p_mesh, uint32_t p_format, VS:
 	}
 
 	//bool has_morph = p_blend_shapes.size();
-	bool use_split_stream = GLOBAL_GET("rendering/misc/mesh_storage/split_stream") && !(p_format & VS::ARRAY_FLAG_USE_DYNAMIC_UPDATE);
+	bool use_split_stream = GLOBAL_GET_CACHED(bool, "rendering/misc/mesh_storage/split_stream") && !(p_format & VS::ARRAY_FLAG_USE_DYNAMIC_UPDATE);
 
 	Surface::Attrib attribs[VS::ARRAY_MAX];
 
@@ -3904,7 +3906,7 @@ PoolVector<float> RasterizerStorageGLES3::mesh_get_blend_shape_values(RID p_mesh
 	return mesh->blend_shape_values;
 }
 
-void RasterizerStorageGLES3::mesh_surface_update_region(RID p_mesh, int p_surface, int p_offset, const PoolVector<uint8_t> &p_data) {
+void RasterizerStorageGLES3::mesh_surface_update_region(RID p_mesh, int p_surface, int p_offset, PoolVector<uint8_t> p_data) {
 	Mesh *mesh = mesh_owner.getornull(p_mesh);
 	ERR_FAIL_COND(!mesh);
 	ERR_FAIL_INDEX(p_surface, mesh->surfaces.size());
@@ -4895,7 +4897,7 @@ Color RasterizerStorageGLES3::_multimesh_instance_get_custom_data(RID p_multimes
 	return Color();
 }
 
-void RasterizerStorageGLES3::_multimesh_set_as_bulk_array(RID p_multimesh, const PoolVector<float> &p_array) {
+void RasterizerStorageGLES3::_multimesh_set_as_bulk_array(RID p_multimesh, PoolVector<float> p_array) {
 	MultiMesh *multimesh = multimesh_owner.getornull(p_multimesh);
 	ERR_FAIL_COND(!multimesh);
 	ERR_FAIL_COND(!multimesh->data.ptr());
@@ -5926,7 +5928,7 @@ Transform RasterizerStorageGLES3::gi_probe_get_to_cell_xform(RID p_probe) const 
 	return gip->to_cell;
 }
 
-void RasterizerStorageGLES3::gi_probe_set_dynamic_data(RID p_probe, const PoolVector<int> &p_data) {
+void RasterizerStorageGLES3::gi_probe_set_dynamic_data(RID p_probe, PoolVector<int> p_data) {
 	GIProbe *gip = gi_probe_owner.getornull(p_probe);
 	ERR_FAIL_COND(!gip);
 
@@ -6137,7 +6139,7 @@ AABB RasterizerStorageGLES3::lightmap_capture_get_bounds(RID p_capture) const {
 	ERR_FAIL_COND_V(!capture, AABB());
 	return capture->bounds;
 }
-void RasterizerStorageGLES3::lightmap_capture_set_octree(RID p_capture, const PoolVector<uint8_t> &p_octree) {
+void RasterizerStorageGLES3::lightmap_capture_set_octree(RID p_capture, PoolVector<uint8_t> p_octree) {
 	LightmapCapture *capture = lightmap_capture_data_owner.getornull(p_capture);
 	ERR_FAIL_COND(!capture);
 
@@ -7662,7 +7664,7 @@ RID RasterizerStorageGLES3::canvas_light_occluder_create() {
 	return canvas_occluder_owner.make_rid(co);
 }
 
-void RasterizerStorageGLES3::canvas_light_occluder_set_polylines(RID p_occluder, const PoolVector<Vector2> &p_lines) {
+void RasterizerStorageGLES3::canvas_light_occluder_set_polylines(RID p_occluder, PoolVector<Vector2> p_lines) {
 	CanvasOccluder *co = canvas_occluder_owner.get(p_occluder);
 	ERR_FAIL_COND(!co);
 

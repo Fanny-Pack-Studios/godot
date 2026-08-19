@@ -54,6 +54,9 @@ class VisualServerWrapMT : public VisualServer {
 	void thread_draw(bool p_swap_buffers, double frame_step);
 	void thread_flush();
 
+	Semaphore thread_halt_semaphore;
+	void thread_halt();
+
 	void thread_exit();
 
 	Mutex alloc_mutex;
@@ -150,7 +153,7 @@ public:
 
 	FUNCRID(mesh)
 
-	FUNC10(mesh_add_surface, RID, uint32_t, PrimitiveType, const PoolVector<uint8_t> &, int, const PoolVector<uint8_t> &, int, const AABB &, const Vector<PoolVector<uint8_t>> &, const Vector<AABB> &)
+	FUNC10(mesh_add_surface, RID, uint32_t, PrimitiveType, PoolVector<uint8_t>, int, PoolVector<uint8_t>, int, const AABB &, const Vector<PoolVector<uint8_t>> &, const Vector<AABB> &)
 
 	FUNC2(mesh_set_blend_shape_count, RID, int)
 	FUNC1RC(int, mesh_get_blend_shape_count, RID)
@@ -158,7 +161,7 @@ public:
 	FUNC2(mesh_set_blend_shape_mode, RID, BlendShapeMode)
 	FUNC1RC(BlendShapeMode, mesh_get_blend_shape_mode, RID)
 
-	FUNC4(mesh_surface_update_region, RID, int, int, const PoolVector<uint8_t> &)
+	FUNC4(mesh_surface_update_region, RID, int, int, PoolVector<uint8_t>)
 
 	FUNC3(mesh_surface_set_material, RID, int, RID)
 	FUNC2RC(RID, mesh_surface_get_material, RID, int)
@@ -205,12 +208,13 @@ public:
 	FUNC2RC(Color, multimesh_instance_get_color, RID, int)
 	FUNC2RC(Color, multimesh_instance_get_custom_data, RID, int)
 
-	FUNC2(multimesh_set_as_bulk_array, RID, const PoolVector<float> &)
+	FUNC2(multimesh_set_as_bulk_array, RID, PoolVector<float>)
 
-	FUNC3(multimesh_set_as_bulk_array_interpolated, RID, const PoolVector<float> &, const PoolVector<float> &)
+	FUNC3(multimesh_set_as_bulk_array_interpolated, RID, PoolVector<float>, PoolVector<float>)
 	FUNC2(multimesh_set_physics_interpolated, RID, bool)
 	FUNC2(multimesh_set_physics_interpolation_quality, RID, MultimeshPhysicsInterpolationQuality)
 	FUNC2(multimesh_instance_reset_physics_interpolation, RID, int)
+	FUNC1(multimesh_instances_reset_physics_interpolation, RID)
 
 	FUNC2(multimesh_set_visible_instances, RID, int)
 	FUNC1RC(int, multimesh_get_visible_instances, RID)
@@ -317,7 +321,7 @@ public:
 	FUNC2(gi_probe_set_compress, RID, bool)
 	FUNC1RC(bool, gi_probe_is_compressed, RID)
 
-	FUNC2(gi_probe_set_dynamic_data, RID, const PoolVector<int> &)
+	FUNC2(gi_probe_set_dynamic_data, RID, PoolVector<int>)
 	FUNC1RC(PoolVector<int>, gi_probe_get_dynamic_data, RID)
 
 	/* LIGHTMAP CAPTURE */
@@ -327,7 +331,7 @@ public:
 	FUNC2(lightmap_capture_set_bounds, RID, const AABB &)
 	FUNC1RC(AABB, lightmap_capture_get_bounds, RID)
 
-	FUNC2(lightmap_capture_set_octree, RID, const PoolVector<uint8_t> &)
+	FUNC2(lightmap_capture_set_octree, RID, PoolVector<uint8_t>)
 	FUNC1RC(PoolVector<uint8_t>, lightmap_capture_get_octree, RID)
 	FUNC2(lightmap_capture_set_octree_cell_transform, RID, const Transform &)
 	FUNC1RC(Transform, lightmap_capture_get_octree_cell_transform, RID)
@@ -375,6 +379,7 @@ public:
 	FUNC4(camera_set_orthogonal, RID, float, float, float)
 	FUNC5(camera_set_frustum, RID, float, Vector2, float, float)
 	FUNC2(camera_set_transform, RID, const Transform &)
+	FUNC2(camera_set_blob_focus_position, RID, const Vector3 &)
 	FUNC2(camera_set_cull_mask, RID, uint32_t)
 	FUNC2(camera_set_environment, RID, RID)
 	FUNC2(camera_set_use_vertical_aspect, RID, bool)
@@ -481,8 +486,6 @@ public:
 	FUNC2(instance_set_layer_mask, RID, uint32_t)
 	FUNC3(instance_set_pivot_data, RID, float, bool)
 	FUNC2(instance_set_transform, RID, const Transform &)
-	FUNC2(instance_set_interpolated, RID, bool)
-	FUNC1(instance_reset_physics_interpolation, RID)
 	FUNC2(instance_attach_object_instance_id, RID, ObjectID)
 	FUNC3(instance_set_blend_shape_weight, RID, int, float)
 	FUNC3(instance_set_surface_material, RID, int, RID)
@@ -495,6 +498,24 @@ public:
 	FUNC2(instance_set_exterior, RID, bool)
 
 	FUNC2(instance_set_extra_visibility_margin, RID, real_t)
+
+	/* BLOB SHADOWS */
+	FUNCRID(capsule_shadow)
+	FUNC5(capsule_shadow_update, RID, const Vector3 &, real_t, const Vector3 &, real_t)
+
+	FUNCRID(blob_shadow)
+	FUNC3(blob_shadow_update, RID, const Vector3 &, real_t)
+
+	FUNC1(blob_shadows_set_range, real_t)
+	FUNC1(blob_shadows_set_gamma, real_t)
+	FUNC1(blob_shadows_set_intensity, real_t)
+
+	FUNCRID(blob_light)
+	FUNC2(blob_light_update, RID, const Transform &)
+	FUNC3(blob_light_set_param, RID, VisualServer::LightBlobShadowParam, real_t)
+	FUNC3(blob_light_set_light_param, RID, VisualServer::LightParam, real_t)
+	FUNC2(blob_light_set_type, RID, VisualServer::LightType)
+	FUNC2(blob_light_set_visible, RID, bool)
 
 	/* PORTALS API */
 
@@ -667,8 +688,8 @@ public:
 	FUNC2(canvas_light_occluder_transform_physics_interpolation, RID, const Transform2D &)
 
 	FUNCRID(canvas_occluder_polygon)
-	FUNC3(canvas_occluder_polygon_set_shape, RID, const PoolVector<Vector2> &, bool)
-	FUNC2(canvas_occluder_polygon_set_shape_as_lines, RID, const PoolVector<Vector2> &)
+	FUNC3(canvas_occluder_polygon_set_shape, RID, PoolVector<Vector2>, bool)
+	FUNC2(canvas_occluder_polygon_set_shape_as_lines, RID, PoolVector<Vector2>)
 
 	FUNC2(canvas_occluder_polygon_set_cull_mode, RID, CanvasOccluderPolygonCullMode)
 
@@ -691,6 +712,8 @@ public:
 	virtual void pre_draw(bool p_will_draw);
 	virtual void draw(bool p_swap_buffers, double frame_step);
 	virtual void sync();
+	virtual void sync_and_halt();
+	virtual void thaw();
 	FUNC1RC(bool, has_changed, ChangedPriority)
 	virtual void set_physics_interpolation_enabled(bool p_enabled);
 

@@ -33,10 +33,12 @@
 
 #include <string.h>
 #include <type_traits>
+#include <utility>
 
 #include "core/error_macros.h"
 #include "core/os/memory.h"
 #include "core/safe_refcount.h"
+#include "core/span.h"
 
 template <class T>
 class Vector;
@@ -59,7 +61,7 @@ class CowData {
 	friend class VMap;
 
 private:
-	mutable T *_ptr;
+	mutable T *_ptr = nullptr;
 
 	// internal helpers
 
@@ -113,12 +115,12 @@ private:
 public:
 	void operator=(const CowData<T> &p_from) { _ref(p_from); }
 
-	_FORCE_INLINE_ T *ptrw() {
+	_FORCE_INLINE_ T *ptrw() _LIFETIME_BOUND_ {
 		_copy_on_write();
 		return _ptr;
 	}
 
-	_FORCE_INLINE_ const T *ptr() const {
+	_FORCE_INLINE_ const T *ptr() const _LIFETIME_BOUND_ {
 		return _ptr;
 	}
 
@@ -131,6 +133,9 @@ public:
 		}
 	}
 
+	_FORCE_INLINE_ operator Span<T>() const _LIFETIME_BOUND_ { return Span<T>(ptr(), size()); }
+	_FORCE_INLINE_ Span<T> span() const _LIFETIME_BOUND_ { return operator Span<T>(); }
+
 	_FORCE_INLINE_ void clear() { resize(0); }
 	_FORCE_INLINE_ bool empty() const { return _ptr == nullptr; }
 
@@ -138,6 +143,12 @@ public:
 		CRASH_BAD_INDEX(p_index, size());
 		_copy_on_write();
 		_ptr[p_index] = p_elem;
+	}
+
+	_FORCE_INLINE_ void set(int p_index, const T &&p_elem) {
+		CRASH_BAD_INDEX(p_index, size());
+		_copy_on_write();
+		_ptr[p_index] = std::move(p_elem);
 	}
 
 	_FORCE_INLINE_ T &get_m(int p_index) {
@@ -159,28 +170,47 @@ public:
 		T *p = ptrw();
 		int len = size();
 		for (int i = p_index; i < len - 1; i++) {
-			p[i] = p[i + 1];
+			p[i] = std::move(p[i + 1]);
 		};
 
 		resize(len - 1);
-	};
+	}
 
 	Error insert(int p_pos, const T &p_val) {
-		ERR_FAIL_INDEX_V(p_pos, size() + 1, ERR_INVALID_PARAMETER);
-		resize(size() + 1);
-		for (int i = (size() - 1); i > p_pos; i--) {
-			set(i, get(i - 1));
+		int new_size = size() + 1;
+		ERR_FAIL_INDEX_V(p_pos, new_size, ERR_INVALID_PARAMETER);
+		Error err = resize(new_size);
+		ERR_FAIL_COND_V(err, err);
+
+		T *p = ptrw();
+		for (int i = new_size - 1; i > p_pos; i--) {
+			p[i] = std::move(p[i - 1]);
 		}
-		set(p_pos, p_val);
+		p[p_pos] = p_val;
 
 		return OK;
-	};
+	}
 
 	int find(const T &p_val, int p_from = 0) const;
 
-	_FORCE_INLINE_ CowData();
+	_FORCE_INLINE_ CowData() {}
 	_FORCE_INLINE_ ~CowData();
-	_FORCE_INLINE_ CowData(CowData<T> &p_from) { _ref(p_from); };
+	_FORCE_INLINE_ CowData(CowData<T> &p_from) { _ref(p_from); }
+	_FORCE_INLINE_ explicit CowData(Span<T> p_span);
+
+	_FORCE_INLINE_ CowData(CowData<T> &&p_from) {
+		_ptr = p_from._ptr;
+		p_from._ptr = nullptr;
+	}
+
+	_FORCE_INLINE_ CowData &operator=(CowData<T> &&p_from) {
+		if (this != &p_from) {
+			_unref(_ptr);
+			_ptr = p_from._ptr;
+			p_from._ptr = nullptr;
+		}
+		return *this;
+	}
 };
 
 template <class T>
@@ -366,9 +396,16 @@ void CowData<T>::_ref(const CowData &p_from) {
 	}
 }
 
-template <class T>
-CowData<T>::CowData() {
-	_ptr = nullptr;
+template <typename T>
+CowData<T>::CowData(Span<T> p_span) {
+	if (p_span.is_empty()) {
+		return;
+	}
+	CRASH_COND(resize(p_span.size()));
+	for (size_t i = 0; i < p_span.size(); i++) {
+		_ptr[i] = p_span[i];
+	}
+	*_get_size() = p_span.size();
 }
 
 template <class T>

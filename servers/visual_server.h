@@ -300,7 +300,7 @@ public:
 	virtual uint32_t mesh_find_format_from_arrays(PrimitiveType p_primitive, const Array &p_arrays, const Array &p_blend_shapes = Array(), uint32_t p_compress_format = ARRAY_COMPRESS_DEFAULT);
 	bool _mesh_find_format(PrimitiveType p_primitive, const Array &p_arrays, const Array &p_blend_shapes, uint32_t p_compress_format, bool p_use_split_stream, uint32_t r_offsets[], int &r_attributes_base_offset, int &r_attributes_stride, int &r_positions_stride, uint32_t &r_format, int &r_index_array_len, int &r_array_len);
 
-	virtual void mesh_add_surface(RID p_mesh, uint32_t p_format, PrimitiveType p_primitive, const PoolVector<uint8_t> &p_array, int p_vertex_count, const PoolVector<uint8_t> &p_index_array, int p_index_count, const AABB &p_aabb, const Vector<PoolVector<uint8_t>> &p_blend_shapes = Vector<PoolVector<uint8_t>>(), const Vector<AABB> &p_bone_aabbs = Vector<AABB>()) = 0;
+	virtual void mesh_add_surface(RID p_mesh, uint32_t p_format, PrimitiveType p_primitive, PoolVector<uint8_t> p_array, int p_vertex_count, PoolVector<uint8_t> p_index_array, int p_index_count, const AABB &p_aabb, const Vector<PoolVector<uint8_t>> &p_blend_shapes = Vector<PoolVector<uint8_t>>(), const Vector<AABB> &p_bone_aabbs = Vector<AABB>()) = 0;
 
 	virtual void mesh_set_blend_shape_count(RID p_mesh, int p_amount) = 0;
 	virtual int mesh_get_blend_shape_count(RID p_mesh) const = 0;
@@ -313,7 +313,7 @@ public:
 	virtual void mesh_set_blend_shape_mode(RID p_mesh, BlendShapeMode p_mode) = 0;
 	virtual BlendShapeMode mesh_get_blend_shape_mode(RID p_mesh) const = 0;
 
-	virtual void mesh_surface_update_region(RID p_mesh, int p_surface, int p_offset, const PoolVector<uint8_t> &p_data) = 0;
+	virtual void mesh_surface_update_region(RID p_mesh, int p_surface, int p_offset, PoolVector<uint8_t> p_data) = 0;
 
 	virtual void mesh_surface_set_material(RID p_mesh, int p_surface, RID p_material) = 0;
 	virtual RID mesh_surface_get_material(RID p_mesh, int p_surface) const = 0;
@@ -388,13 +388,14 @@ public:
 	virtual Color multimesh_instance_get_color(RID p_multimesh, int p_index) const = 0;
 	virtual Color multimesh_instance_get_custom_data(RID p_multimesh, int p_index) const = 0;
 
-	virtual void multimesh_set_as_bulk_array(RID p_multimesh, const PoolVector<float> &p_array) = 0;
+	virtual void multimesh_set_as_bulk_array(RID p_multimesh, PoolVector<float> p_array) = 0;
 
 	// Interpolation
-	virtual void multimesh_set_as_bulk_array_interpolated(RID p_multimesh, const PoolVector<float> &p_array, const PoolVector<float> &p_array_prev) = 0;
+	virtual void multimesh_set_as_bulk_array_interpolated(RID p_multimesh, PoolVector<float> p_array, PoolVector<float> p_array_prev) = 0;
 	virtual void multimesh_set_physics_interpolated(RID p_multimesh, bool p_interpolated) = 0;
 	virtual void multimesh_set_physics_interpolation_quality(RID p_multimesh, MultimeshPhysicsInterpolationQuality p_quality) = 0;
 	virtual void multimesh_instance_reset_physics_interpolation(RID p_multimesh, int p_index) = 0;
+	virtual void multimesh_instances_reset_physics_interpolation(RID p_multimesh) = 0;
 
 	virtual void multimesh_set_visible_instances(RID p_multimesh, int p_visible) = 0;
 	virtual int multimesh_get_visible_instances(RID p_multimesh) const = 0;
@@ -454,6 +455,13 @@ public:
 		LIGHT_PARAM_SHADOW_BIAS_SPLIT_SCALE,
 		LIGHT_PARAM_SHADOW_FADE_START,
 		LIGHT_PARAM_MAX
+	};
+
+	enum LightBlobShadowParam {
+		LIGHT_BLOB_SHADOW_PARAM_RANGE_HARDNESS,
+		LIGHT_BLOB_SHADOW_PARAM_RANGE_MAX,
+		LIGHT_BLOB_SHADOW_PARAM_INTENSITY,
+		LIGHT_BLOB_SHADOW_PARAM_MAX
 	};
 
 	virtual RID directional_light_create() = 0;
@@ -550,7 +558,7 @@ public:
 	virtual void gi_probe_set_to_cell_xform(RID p_probe, const Transform &p_xform) = 0;
 	virtual Transform gi_probe_get_to_cell_xform(RID p_probe) const = 0;
 
-	virtual void gi_probe_set_dynamic_data(RID p_probe, const PoolVector<int> &p_data) = 0;
+	virtual void gi_probe_set_dynamic_data(RID p_probe, PoolVector<int> p_data) = 0;
 	virtual PoolVector<int> gi_probe_get_dynamic_data(RID p_probe) const = 0;
 
 	virtual void gi_probe_set_dynamic_range(RID p_probe, int p_range) = 0;
@@ -579,7 +587,7 @@ public:
 	virtual RID lightmap_capture_create() = 0;
 	virtual void lightmap_capture_set_bounds(RID p_capture, const AABB &p_bounds) = 0;
 	virtual AABB lightmap_capture_get_bounds(RID p_capture) const = 0;
-	virtual void lightmap_capture_set_octree(RID p_capture, const PoolVector<uint8_t> &p_octree) = 0;
+	virtual void lightmap_capture_set_octree(RID p_capture, PoolVector<uint8_t> p_octree) = 0;
 	virtual void lightmap_capture_set_octree_cell_transform(RID p_capture, const Transform &p_xform) = 0;
 	virtual Transform lightmap_capture_get_octree_cell_transform(RID p_capture) const = 0;
 	virtual void lightmap_capture_set_octree_cell_subdiv(RID p_capture, int p_subdiv) = 0;
@@ -634,6 +642,7 @@ public:
 	virtual void camera_set_orthogonal(RID p_camera, float p_size, float p_z_near, float p_z_far) = 0;
 	virtual void camera_set_frustum(RID p_camera, float p_size, Vector2 p_offset, float p_z_near, float p_z_far) = 0;
 	virtual void camera_set_transform(RID p_camera, const Transform &p_transform) = 0;
+	virtual void camera_set_blob_focus_position(RID p_camera, const Vector3 &p_pos) = 0;
 	virtual void camera_set_cull_mask(RID p_camera, uint32_t p_layers) = 0;
 	virtual void camera_set_environment(RID p_camera, RID p_env) = 0;
 	virtual void camera_set_use_vertical_aspect(RID p_camera, bool p_enable) = 0;
@@ -878,8 +887,6 @@ public:
 	virtual void instance_set_layer_mask(RID p_instance, uint32_t p_mask) = 0;
 	virtual void instance_set_pivot_data(RID p_instance, float p_sorting_offset, bool p_use_aabb_center) = 0;
 	virtual void instance_set_transform(RID p_instance, const Transform &p_transform) = 0;
-	virtual void instance_set_interpolated(RID p_instance, bool p_interpolated) = 0;
-	virtual void instance_reset_physics_interpolation(RID p_instance) = 0;
 	virtual void instance_attach_object_instance_id(RID p_instance, ObjectID p_id) = 0;
 	virtual void instance_set_blend_shape_weight(RID p_instance, int p_shape, float p_weight) = 0;
 	virtual void instance_set_surface_material(RID p_instance, int p_surface, RID p_material) = 0;
@@ -893,6 +900,24 @@ public:
 	virtual void instance_set_exterior(RID p_instance, bool p_enabled) = 0;
 
 	virtual void instance_set_extra_visibility_margin(RID p_instance, real_t p_margin) = 0;
+
+	/* BLOB SHADOWS API */
+	virtual RID capsule_shadow_create() = 0;
+	virtual void capsule_shadow_update(RID p_blob, const Vector3 &p_occluder_a_pos, real_t p_occluder_a_radius, const Vector3 &p_occluder_b_pos, real_t p_occluder_b_radius) = 0;
+
+	virtual RID blob_shadow_create() = 0;
+	virtual void blob_shadow_update(RID p_blob, const Vector3 &p_occluder_pos, real_t p_occluder_radius) = 0;
+
+	virtual void blob_shadows_set_range(real_t p_value) = 0;
+	virtual void blob_shadows_set_gamma(real_t p_value) = 0;
+	virtual void blob_shadows_set_intensity(real_t p_value) = 0;
+
+	virtual RID blob_light_create() = 0;
+	virtual void blob_light_update(RID p_blob_light, const Transform &p_global_transform) = 0;
+	virtual void blob_light_set_param(RID p_blob_light, VisualServer::LightBlobShadowParam p_param, real_t p_value) = 0;
+	virtual void blob_light_set_light_param(RID p_blob_light, VisualServer::LightParam p_param, real_t p_value) = 0;
+	virtual void blob_light_set_type(RID p_blob_light, VisualServer::LightType p_type) = 0;
+	virtual void blob_light_set_visible(RID p_blob_light, bool p_visible) = 0;
 
 	/* PORTALS API */
 
@@ -1133,8 +1158,8 @@ public:
 	virtual void canvas_light_occluder_transform_physics_interpolation(RID p_occluder, const Transform2D &p_transform) = 0;
 
 	virtual RID canvas_occluder_polygon_create() = 0;
-	virtual void canvas_occluder_polygon_set_shape(RID p_occluder_polygon, const PoolVector<Vector2> &p_shape, bool p_closed) = 0;
-	virtual void canvas_occluder_polygon_set_shape_as_lines(RID p_occluder_polygon, const PoolVector<Vector2> &p_shape) = 0;
+	virtual void canvas_occluder_polygon_set_shape(RID p_occluder_polygon, PoolVector<Vector2> p_shape, bool p_closed) = 0;
+	virtual void canvas_occluder_polygon_set_shape_as_lines(RID p_occluder_polygon, PoolVector<Vector2> p_shape) = 0;
 
 	enum CanvasOccluderPolygonCullMode {
 		CANVAS_OCCLUDER_POLYGON_CULL_DISABLED,
@@ -1164,6 +1189,8 @@ public:
 
 	virtual void draw(bool p_swap_buffers = true, double frame_step = 0.0) = 0;
 	virtual void sync() = 0;
+	virtual void sync_and_halt() = 0;
+	virtual void thaw() = 0;
 	virtual bool has_changed(ChangedPriority p_priority = CHANGED_PRIORITY_ANY) const = 0;
 	virtual void init() = 0;
 	virtual void finish() = 0;
@@ -1205,7 +1232,7 @@ public:
 	virtual RID make_sphere_mesh(int p_lats, int p_lons, float p_radius);
 
 	virtual void mesh_add_surface_from_mesh_data(RID p_mesh, const Geometry::MeshData &p_mesh_data);
-	virtual void mesh_add_surface_from_planes(RID p_mesh, const PoolVector<Plane> &p_planes);
+	virtual void mesh_add_surface_from_planes(RID p_mesh, PoolVector<Plane> p_planes);
 
 	virtual void set_boot_image(const Ref<Image> &p_image, const Color &p_color, bool p_scale, bool p_use_filter = true) = 0;
 	virtual void set_default_clear_color(const Color &p_color) = 0;
@@ -1248,6 +1275,7 @@ VARIANT_ENUM_CAST(VisualServer::PrimitiveType);
 VARIANT_ENUM_CAST(VisualServer::BlendShapeMode);
 VARIANT_ENUM_CAST(VisualServer::LightType);
 VARIANT_ENUM_CAST(VisualServer::LightParam);
+VARIANT_ENUM_CAST(VisualServer::LightBlobShadowParam);
 VARIANT_ENUM_CAST(VisualServer::ViewportUpdateMode);
 VARIANT_ENUM_CAST(VisualServer::ViewportClearMode);
 VARIANT_ENUM_CAST(VisualServer::ViewportMSAA);

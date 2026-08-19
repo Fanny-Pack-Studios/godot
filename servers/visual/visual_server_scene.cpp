@@ -42,6 +42,7 @@
 
 RID VisualServerScene::camera_create() {
 	Camera *camera = memnew(Camera);
+	_blob_shadows.request_focus(camera->blob_focus_handle);
 	return camera_owner.make_rid(camera);
 }
 
@@ -71,6 +72,13 @@ void VisualServerScene::camera_set_frustum(RID p_camera, float p_size, Vector2 p
 	camera->offset = p_offset;
 	camera->znear = p_z_near;
 	camera->zfar = p_z_far;
+}
+
+void VisualServerScene::camera_set_blob_focus_position(RID p_camera, const Vector3 &p_pos) {
+	Camera *camera = camera_owner.get(p_camera);
+	ERR_FAIL_COND(!camera);
+
+	camera->blob_focus_pos = p_pos;
 }
 
 void VisualServerScene::camera_set_transform(RID p_camera, const Transform &p_transform) {
@@ -618,6 +626,7 @@ void VisualServerScene::instance_set_base(RID p_instance, RID p_base) {
 				if (instance->base_type == VS::INSTANCE_MESH) {
 					instance->blend_values.resize(VSG::storage->mesh_get_blend_shape_count(p_base));
 				}
+
 			} break;
 			case VS::INSTANCE_REFLECTION_PROBE: {
 				InstanceReflectionProbeData *reflection_probe = memnew(InstanceReflectionProbeData);
@@ -672,9 +681,6 @@ void VisualServerScene::instance_set_scenario(RID p_instance, RID p_scenario) {
 		if (instance->occlusion_handle) {
 			_instance_destroy_occlusion_rep(instance);
 		}
-
-		// remove any interpolation data associated with the instance in this scenario
-		_interpolation_data.notify_free_instance(p_instance, *instance);
 
 		switch (instance->base_type) {
 			case VS::INSTANCE_LIGHT: {
@@ -765,27 +771,6 @@ void VisualServerScene::instance_set_pivot_data(RID p_instance, float p_sorting_
 	instance->use_aabb_center = p_use_aabb_center;
 }
 
-void VisualServerScene::instance_reset_physics_interpolation(RID p_instance) {
-	Instance *instance = instance_owner.get(p_instance);
-	ERR_FAIL_COND(!instance);
-
-	if (_interpolation_data.interpolation_enabled && instance->interpolated) {
-		instance->transform_prev = instance->transform_curr;
-		instance->transform_checksum_prev = instance->transform_checksum_curr;
-
-#ifdef VISUAL_SERVER_DEBUG_PHYSICS_INTERPOLATION
-		print_line("instance_reset_physics_interpolation .. tick " + itos(Engine::get_singleton()->get_physics_frames()));
-		print_line("\tprev " + rtos(instance->transform_prev.origin.x) + ", curr " + rtos(instance->transform_curr.origin.x));
-#endif
-	}
-}
-
-void VisualServerScene::instance_set_interpolated(RID p_instance, bool p_interpolated) {
-	Instance *instance = instance_owner.get(p_instance);
-	ERR_FAIL_COND(!instance);
-	instance->interpolated = p_interpolated;
-}
-
 void VisualServerScene::instance_set_transform(RID p_instance, const Transform &p_transform) {
 	Instance *instance = instance_owner.get(p_instance);
 	ERR_FAIL_COND(!instance);
@@ -794,47 +779,8 @@ void VisualServerScene::instance_set_transform(RID p_instance, const Transform &
 	print_line("instance_set_transform " + rtos(p_transform.origin.x) + " .. tick " + itos(Engine::get_singleton()->get_physics_frames()));
 #endif
 
-	if (!(_interpolation_data.interpolation_enabled && instance->interpolated) || !instance->scenario) {
-		if (instance->transform == p_transform) {
-			return; //must be checked to avoid worst evil
-		}
-
-#ifdef DEBUG_ENABLED
-
-		for (int i = 0; i < 4; i++) {
-			const Vector3 &v = i < 3 ? p_transform.basis.elements[i] : p_transform.origin;
-			ERR_FAIL_COND(Math::is_inf(v.x));
-			ERR_FAIL_COND(Math::is_nan(v.x));
-			ERR_FAIL_COND(Math::is_inf(v.y));
-			ERR_FAIL_COND(Math::is_nan(v.y));
-			ERR_FAIL_COND(Math::is_inf(v.z));
-			ERR_FAIL_COND(Math::is_nan(v.z));
-		}
-
-#endif
-		instance->transform = p_transform;
-		_instance_queue_update(instance, true);
-
-#if defined(DEBUG_ENABLED) && defined(TOOLS_ENABLED)
-		if ((_interpolation_data.interpolation_enabled && !instance->interpolated) && (Engine::get_singleton()->is_in_physics_frame())) {
-			PHYSICS_INTERPOLATION_NODE_WARNING(instance->object_id, "Non-interpolated triggered from physics process");
-		}
-#endif
-
-		return;
-	}
-
-	float new_checksum = TransformInterpolator::checksum_transform(p_transform);
-	bool checksums_match = (instance->transform_checksum_curr == new_checksum) && (instance->transform_checksum_prev == new_checksum);
-
-	// we can't entirely reject no changes because we need the interpolation
-	// system to keep on stewing
-
-	// Optimized check. First checks the checksums. If they pass it does the slow check at the end.
-	// Alternatively we can do this non-optimized and ignore the checksum...
-	// if no change
-	if (checksums_match && (instance->transform_curr == p_transform) && (instance->transform_prev == p_transform)) {
-		return;
+	if (instance->transform == p_transform) {
+		return; //must be checked to avoid worst evil
 	}
 
 #ifdef DEBUG_ENABLED
@@ -850,62 +796,8 @@ void VisualServerScene::instance_set_transform(RID p_instance, const Transform &
 	}
 
 #endif
-
-	instance->transform_curr = p_transform;
-
-#ifdef VISUAL_SERVER_DEBUG_PHYSICS_INTERPOLATION
-	print_line("\tprev " + rtos(instance->transform_prev.origin.x) + ", curr " + rtos(instance->transform_curr.origin.x));
-#endif
-
-	// keep checksums up to date
-	instance->transform_checksum_curr = new_checksum;
-
-	if (!instance->on_interpolate_transform_list) {
-		_interpolation_data.instance_transform_update_list_curr->push_back(p_instance);
-		instance->on_interpolate_transform_list = true;
-	} else {
-		DEV_ASSERT(_interpolation_data.instance_transform_update_list_curr->size());
-	}
-
-	// If the instance is invisible, then we are simply updating the data flow, there is no need to calculate the interpolated
-	// transform or anything else.
-	// Ideally we would not even call the VisualServer::set_transform() when invisible but that would entail having logic
-	// to keep track of the previous transform on the SceneTree side. The "early out" below is less efficient but a lot cleaner codewise.
-	if (!instance->visible) {
-		return;
-	}
-
-	// decide on the interpolation method .. slerp if possible
-	instance->interpolation_method = TransformInterpolator::find_method(instance->transform_prev.basis, instance->transform_curr.basis);
-
-	if (!instance->on_interpolate_list) {
-		_interpolation_data.instance_interpolate_update_list.push_back(p_instance);
-		instance->on_interpolate_list = true;
-	} else {
-		DEV_ASSERT(_interpolation_data.instance_interpolate_update_list.size());
-	}
-
+	instance->transform = p_transform;
 	_instance_queue_update(instance, true);
-
-#if defined(DEBUG_ENABLED) && defined(TOOLS_ENABLED)
-	if (!Engine::get_singleton()->is_in_physics_frame()) {
-		PHYSICS_INTERPOLATION_NODE_WARNING(instance->object_id, "Interpolated triggered from outside physics process");
-	}
-#endif
-}
-
-void VisualServerScene::InterpolationData::notify_free_instance(RID p_rid, Instance &r_instance) {
-	r_instance.on_interpolate_list = false;
-	r_instance.on_interpolate_transform_list = false;
-
-	if (!interpolation_enabled) {
-		return;
-	}
-
-	// if the instance was on any of the lists, remove
-	instance_interpolate_update_list.erase_multiple_unordered(p_rid);
-	instance_transform_update_list_curr->erase_multiple_unordered(p_rid);
-	instance_transform_update_list_prev->erase_multiple_unordered(p_rid);
 }
 
 void VisualServerScene::update_interpolation_tick(bool p_process) {
@@ -915,84 +807,11 @@ void VisualServerScene::update_interpolation_tick(bool p_process) {
 
 	// update interpolation in storage
 	VSG::storage->update_interpolation_tick(p_process);
-
-	// detect any that were on the previous transform list that are no longer active,
-	// we should remove them from the interpolate list
-
-	for (unsigned int n = 0; n < _interpolation_data.instance_transform_update_list_prev->size(); n++) {
-		const RID &rid = (*_interpolation_data.instance_transform_update_list_prev)[n];
-		Instance *instance = instance_owner.getornull(rid);
-
-		bool active = true;
-
-		// no longer active? (either the instance deleted or no longer being transformed)
-		if (instance && !instance->on_interpolate_transform_list) {
-			active = false;
-			instance->on_interpolate_list = false;
-
-			// make sure the most recent transform is set
-			instance->transform = instance->transform_curr;
-
-			// and that both prev and current are the same, just in case of any interpolations
-			instance->transform_prev = instance->transform_curr;
-
-			// make sure are updated one more time to ensure the AABBs are correct
-			_instance_queue_update(instance, true);
-		}
-
-		if (!instance) {
-			active = false;
-		}
-
-		if (!active) {
-			_interpolation_data.instance_interpolate_update_list.erase(rid);
-		}
-	}
-
-	// and now for any in the transform list (being actively interpolated), keep the previous transform
-	// value up to date ready for the next tick
-	if (p_process) {
-		for (unsigned int n = 0; n < _interpolation_data.instance_transform_update_list_curr->size(); n++) {
-			const RID &rid = (*_interpolation_data.instance_transform_update_list_curr)[n];
-			Instance *instance = instance_owner.getornull(rid);
-			if (instance) {
-				instance->transform_prev = instance->transform_curr;
-				instance->transform_checksum_prev = instance->transform_checksum_curr;
-				instance->on_interpolate_transform_list = false;
-			}
-		}
-	}
-
-	// we maintain a mirror list for the transform updates, so we can detect when an instance
-	// is no longer being transformed, and remove it from the interpolate list
-	SWAP(_interpolation_data.instance_transform_update_list_curr, _interpolation_data.instance_transform_update_list_prev);
-
-	// prepare for the next iteration
-	_interpolation_data.instance_transform_update_list_curr->clear();
 }
 
 void VisualServerScene::update_interpolation_frame(bool p_process) {
 	// update interpolation in storage
 	VSG::storage->update_interpolation_frame(p_process);
-
-	if (p_process) {
-		real_t f = Engine::get_singleton()->get_physics_interpolation_fraction();
-
-		for (unsigned int i = 0; i < _interpolation_data.instance_interpolate_update_list.size(); i++) {
-			const RID &rid = _interpolation_data.instance_interpolate_update_list[i];
-			Instance *instance = instance_owner.getornull(rid);
-			if (instance) {
-				TransformInterpolator::interpolate_transform_via_method(instance->transform_prev, instance->transform_curr, instance->transform, f, instance->interpolation_method);
-
-#ifdef VISUAL_SERVER_DEBUG_PHYSICS_INTERPOLATION
-				print_line("\t\tinterpolated: " + rtos(instance->transform.origin.x) + "\t( prev " + rtos(instance->transform_prev.origin.x) + ", curr " + rtos(instance->transform_curr.origin.x) + " ) on tick " + itos(Engine::get_singleton()->get_physics_frames()));
-#endif
-
-				// make sure AABBs are constantly up to date through the interpolation
-				_instance_queue_update(instance, true);
-			}
-		} // for n
-	}
 }
 
 void VisualServerScene::instance_attach_object_instance_id(RID p_instance, ObjectID p_id) {
@@ -1045,25 +864,6 @@ void VisualServerScene::instance_set_visible(RID p_instance, bool p_visible) {
 	}
 
 	instance->visible = p_visible;
-
-	// Special case for physics interpolation, we want to ensure the interpolated data is up to date
-	if (_interpolation_data.interpolation_enabled && p_visible && instance->interpolated && instance->scenario && !instance->on_interpolate_list) {
-		// Do all the extra work we normally do on instance_set_transform(), because this is optimized out for hidden instances.
-		// This prevents a glitch of stale interpolation transform data when unhiding before the next physics tick.
-		instance->interpolation_method = TransformInterpolator::find_method(instance->transform_prev.basis, instance->transform_curr.basis);
-		_interpolation_data.instance_interpolate_update_list.push_back(p_instance);
-		instance->on_interpolate_list = true;
-		_instance_queue_update(instance, true);
-
-		// We must also place on the transform update list for a tick, so the system
-		// can auto-detect if the instance is no longer moving, and remove from the interpolate lists again.
-		// If this step is ignored, an unmoving instance could remain on the interpolate lists indefinitely
-		// (or rather until the object is deleted) and cause unnecessary updates and drawcalls.
-		if (!instance->on_interpolate_transform_list) {
-			_interpolation_data.instance_transform_update_list_curr->push_back(p_instance);
-			instance->on_interpolate_transform_list = true;
-		}
-	}
 
 	// give the opportunity for the spatial partitioning scene to use a special implementation of visibility
 	// for efficiency (supported in BVH but not octree)
@@ -1284,6 +1084,158 @@ bool VisualServerScene::_instance_get_transformed_aabb(RID p_instance, AABB &r_a
 	r_aabb = instance->transformed_aabb;
 
 	return true;
+}
+
+RID VisualServerScene::blob_light_create() {
+	BlobLight *blob_light = memnew(BlobLight);
+	ERR_FAIL_NULL_V(blob_light, RID());
+	RID blob_light_rid = blob_light_owner.make_rid(blob_light);
+
+	_blob_shadows.request_light(blob_light->handle);
+	return blob_light_rid;
+}
+
+void VisualServerScene::blob_light_update(RID p_blob_light, const Transform &p_global_transform) {
+	BlobLight *blob_light = blob_light_owner.getornull(p_blob_light);
+	ERR_FAIL_NULL(blob_light);
+	ERR_FAIL_COND(blob_light->handle == 0);
+	VisualServerBlobShadows::Light &blight = _blob_shadows.get_light(blob_light->handle);
+
+	blight.pos = p_global_transform.origin;
+	blight.direction = -p_global_transform.basis.get_axis(2);
+	blight.direction.normalize();
+
+	_blob_shadows.make_light_dirty(blight);
+}
+
+void VisualServerScene::blob_light_set_light_param(RID p_blob_light, VisualServer::LightParam p_param, real_t p_value) {
+	// This is our opportunity to intercept some of the more usual light parameters,
+	// if we can use them for blob shadows.
+	BlobLight *blob_light = blob_light_owner.getornull(p_blob_light);
+	ERR_FAIL_NULL(blob_light);
+	ERR_FAIL_COND(!blob_light->handle);
+
+	VisualServerBlobShadows::Light &blight = _blob_shadows.get_light(blob_light->handle);
+
+	switch (p_param) {
+		case VisualServer::LIGHT_PARAM_SPOT_ANGLE: {
+			blight.set_spot_degrees(p_value);
+		} break;
+		case VisualServer::LIGHT_PARAM_ENERGY: {
+			blight.energy = p_value;
+			blight.calculate_energy_intensity();
+		} break;
+		default:
+			break;
+	}
+
+	_blob_shadows.make_light_dirty(blight);
+}
+
+void VisualServerScene::blob_light_set_param(RID p_blob_light, VisualServer::LightBlobShadowParam p_param, real_t p_value) {
+	BlobLight *blob_light = blob_light_owner.getornull(p_blob_light);
+	ERR_FAIL_NULL(blob_light);
+	ERR_FAIL_COND(!blob_light->handle);
+
+	VisualServerBlobShadows::Light &blight = _blob_shadows.get_light(blob_light->handle);
+
+	switch (p_param) {
+		case VisualServer::LIGHT_BLOB_SHADOW_PARAM_RANGE_HARDNESS: {
+			blob_light->range_hardness = p_value;
+		} break;
+		case VisualServer::LIGHT_BLOB_SHADOW_PARAM_RANGE_MAX: {
+			blob_light->range_max = p_value;
+		} break;
+		case VisualServer::LIGHT_BLOB_SHADOW_PARAM_INTENSITY: {
+			blight.intensity = p_value;
+			blight.calculate_energy_intensity();
+		} break;
+		default:
+			break;
+	}
+
+	blight.range_max = blob_light->range_max;
+	blight.range_mid = blight.range_max * blob_light->range_hardness;
+
+	// Enforce positive non-zero
+	blight.range_mid_max = blight.range_max - blight.range_mid;
+	blight.range_mid_max = MAX(blight.range_mid_max, (real_t)0.00001f);
+
+	_blob_shadows.make_light_dirty(blight);
+}
+
+void VisualServerScene::blob_light_set_visible(RID p_blob_light, bool p_visible) {
+	BlobLight *blob_light = blob_light_owner.getornull(p_blob_light);
+	ERR_FAIL_NULL(blob_light);
+	ERR_FAIL_COND(blob_light->handle == 0);
+	_blob_shadows.set_light_visible(blob_light->handle, p_visible);
+}
+
+void VisualServerScene::blob_light_set_type(RID p_blob_light, VisualServer::LightType p_type) {
+	BlobLight *blob_light = blob_light_owner.getornull(p_blob_light);
+	ERR_FAIL_NULL(blob_light);
+	ERR_FAIL_COND(blob_light->handle == 0);
+	VisualServerBlobShadows::Light &blight = _blob_shadows.get_light(blob_light->handle);
+
+	switch (p_type) {
+		case VS::LIGHT_DIRECTIONAL: {
+			blight.type = VisualServerBlobShadows::DIRECTIONAL;
+		} break;
+		case VS::LIGHT_SPOT: {
+			blight.type = VisualServerBlobShadows::SPOT;
+		} break;
+		default: {
+			blight.type = VisualServerBlobShadows::OMNI;
+		} break;
+	}
+}
+
+RID VisualServerScene::blob_shadow_create() {
+	BlobShadow *blob = memnew(BlobShadow);
+	ERR_FAIL_NULL_V(blob, RID());
+	RID blob_rid = blob_shadow_owner.make_rid(blob);
+
+	_blob_shadows.request_blob(blob->handle);
+	return blob_rid;
+}
+
+void VisualServerScene::blob_shadow_update(RID p_blob, const Vector3 &p_occluder_pos, real_t p_occluder_radius) {
+	BlobShadow *blob = blob_shadow_owner.getornull(p_blob);
+	ERR_FAIL_NULL(blob);
+	ERR_FAIL_COND(blob->handle == 0);
+	VisualServerBlobShadows::Blob &caster = _blob_shadows.get_blob(blob->handle);
+
+	// Shader expects radius squared, cheaper to do on CPU than in fragment shader.
+	caster.pos = p_occluder_pos;
+	caster.pos_center = p_occluder_pos;
+	caster.size = p_occluder_radius * p_occluder_radius;
+	_blob_shadows.make_blob_dirty(caster);
+}
+
+RID VisualServerScene::capsule_shadow_create() {
+	CapsuleShadow *capsule = memnew(CapsuleShadow);
+	ERR_FAIL_NULL_V(capsule, RID());
+	RID capsule_rid = capsule_shadow_owner.make_rid(capsule);
+
+	_blob_shadows.request_capsule(capsule->handle);
+	return capsule_rid;
+}
+
+void VisualServerScene::capsule_shadow_update(RID p_blob, const Vector3 &p_occluder_a_pos, real_t p_occluder_a_radius, const Vector3 &p_occluder_b_pos, real_t p_occluder_b_radius) {
+	CapsuleShadow *capsule = capsule_shadow_owner.getornull(p_blob);
+	ERR_FAIL_NULL(capsule);
+	ERR_FAIL_COND(capsule->handle == 0);
+	VisualServerBlobShadows::Capsule &caster = _blob_shadows.get_capsule(capsule->handle);
+
+	// Shader expects radius squared, cheaper to do on CPU than in fragment shader.
+	caster.pos = p_occluder_a_pos;
+	caster.size = p_occluder_a_radius * p_occluder_a_radius;
+	caster.pos_b = p_occluder_b_pos;
+	caster.size_b = p_occluder_b_radius * p_occluder_b_radius;
+
+	caster.pos_center = (caster.pos + caster.pos_b) * (real_t)0.5;
+
+	_blob_shadows.make_capsule_dirty(caster);
 }
 
 // the portal has to be associated with a scenario, this is assumed to be
@@ -2794,6 +2746,8 @@ void VisualServerScene::render_camera(RID p_camera, RID p_scenario, Size2 p_view
 		} break;
 	}
 
+	_blob_shadows.render_set_focus_handle(camera->blob_focus_handle, camera->blob_focus_pos, camera->transform, camera_matrix);
+
 	_prepare_scene(camera->transform, camera_matrix, ortho, camera->env, camera->visible_layers, p_scenario, p_shadow_atlas, RID(), camera->previous_room_id_hint);
 	_render_scene(camera->transform, camera_matrix, 0, ortho, camera->env, p_scenario, p_shadow_atlas, RID(), -1);
 #endif
@@ -2813,6 +2767,8 @@ void VisualServerScene::render_camera(Ref<ARVRInterface> &p_interface, ARVRInter
 	// Instead we take our origin point and have our ar/vr interface add fresh tracking data! Whoohoo!
 	Transform world_origin = ARVRServer::get_singleton()->get_world_origin();
 	Transform cam_transform = p_interface->get_transform_for_eye(p_eye, world_origin);
+
+	_blob_shadows.render_set_focus_handle(camera->blob_focus_handle, camera->blob_focus_pos, cam_transform, camera_matrix);
 
 	// For stereo render we only prepare for our left eye and then reuse the outcome for our right eye
 	if (p_eye == ARVRInterface::EYE_LEFT) {
@@ -4295,6 +4251,14 @@ void VisualServerScene::render_probes() {
 	}
 }
 
+uint32_t VisualServerScene::blob_shadows_fill_background_uniforms(const AABB &p_aabb, float *r_casters, float *r_lights, uint32_t p_max_casters) {
+	return _blob_shadows.fill_background_uniforms_blobs(p_aabb, r_casters, r_lights, p_max_casters);
+}
+
+uint32_t VisualServerScene::capsule_shadows_fill_background_uniforms(const AABB &p_aabb, float *r_casters, float *r_lights, uint32_t p_max_casters) {
+	return _blob_shadows.fill_background_uniforms_capsules(p_aabb, r_casters, r_lights, p_max_casters);
+}
+
 void VisualServerScene::_update_dirty_instance(Instance *p_instance) {
 	if (p_instance->update_aabb) {
 		_update_instance_aabb(p_instance);
@@ -4472,11 +4436,17 @@ void VisualServerScene::update_dirty_instances() {
 	if (scenario) {
 		scenario->sps->update();
 	}
+
+	_blob_shadows.update();
 }
 
 bool VisualServerScene::free(RID p_rid) {
 	if (camera_owner.owns(p_rid)) {
 		Camera *camera = camera_owner.get(p_rid);
+
+		_blob_shadows.delete_focus(camera->blob_focus_handle);
+		camera->blob_focus_handle = 0;
+
 		camera_owner.free(p_rid);
 		memdelete(camera);
 	} else if (scenario_owner.owns(p_rid)) {
@@ -4496,7 +4466,6 @@ bool VisualServerScene::free(RID p_rid) {
 		update_dirty_instances();
 
 		Instance *instance = instance_owner.get(p_rid);
-		_interpolation_data.notify_free_instance(p_rid, *instance);
 
 		instance_set_use_lightmap(p_rid, RID(), RID(), -1, Rect2(0, 0, 1, 1));
 		instance_set_scenario(p_rid, RID());
@@ -4535,6 +4504,27 @@ bool VisualServerScene::free(RID p_rid) {
 		occ_res->destroy(_portal_resources);
 		occluder_resource_owner.free(p_rid);
 		memdelete(occ_res);
+	} else if (capsule_shadow_owner.owns(p_rid)) {
+		CapsuleShadow *capsule = capsule_shadow_owner.get(p_rid);
+		capsule_shadow_owner.free(p_rid);
+		if (capsule->handle) {
+			_blob_shadows.delete_capsule(capsule->handle);
+		}
+		memdelete(capsule);
+	} else if (blob_shadow_owner.owns(p_rid)) {
+		BlobShadow *blob = blob_shadow_owner.get(p_rid);
+		blob_shadow_owner.free(p_rid);
+		if (blob->handle) {
+			_blob_shadows.delete_blob(blob->handle);
+		}
+		memdelete(blob);
+	} else if (blob_light_owner.owns(p_rid)) {
+		BlobLight *blob_light = blob_light_owner.get(p_rid);
+		blob_light_owner.free(p_rid);
+		if (blob_light->handle) {
+			_blob_shadows.delete_light(blob_light->handle);
+		}
+		memdelete(blob_light);
 	} else {
 		return false;
 	}

@@ -344,6 +344,7 @@ class OS_Windows : public OS {
 
 	Size2 window_rect;
 	VideoMode video_mode;
+	bool non_ex_fs = false;
 	bool preserve_window_size = false;
 
 	MainLoop *main_loop;
@@ -436,6 +437,8 @@ protected:
 public:
 	LRESULT WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 
+	virtual Error get_entropy(uint8_t *r_buffer, int p_bytes);
+
 	virtual void alert(const String &p_alert, const String &p_title = "ALERT!");
 	String get_stdin_string();
 
@@ -486,6 +489,8 @@ public:
 	virtual void set_window_size(const Size2 p_size);
 	virtual void set_window_fullscreen(bool p_enabled);
 	virtual bool is_window_fullscreen() const;
+	virtual void set_window_use_nonexclusive_fullscreen(bool p_enabled);
+	virtual bool is_window_use_nonexclusive_fullscreen() const;
 	virtual void set_window_resizable(bool p_enabled);
 	virtual bool is_window_resizable() const;
 	virtual void set_window_minimized(bool p_enabled);

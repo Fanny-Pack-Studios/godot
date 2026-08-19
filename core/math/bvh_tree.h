@@ -156,7 +156,7 @@ public:
 template <class T>
 class BVH_DummyPairTestFunction {
 public:
-	static bool user_collision_check(T *p_a, T *p_b) {
+	static bool user_pair_check(const T *p_a, const T *p_b) {
 		// return false if no collision, decided by masks etc
 		return true;
 	}
@@ -165,7 +165,7 @@ public:
 template <class T>
 class BVH_DummyCullTestFunction {
 public:
-	static bool user_cull_check(T *p_a, T *p_b) {
+	static bool user_cull_check(const T *p_a, const T *p_b) {
 		// return false if no collision
 		return true;
 	}
@@ -235,7 +235,8 @@ private:
 
 		// no need to keep back references for children at the moment
 
-		uint32_t sibling_id; // always a node id, as tnode is never a leaf
+		// Always a node id, as tnode is never a leaf.
+		uint32_t sibling_id = BVHCommon::INVALID;
 		bool sibling_present = false;
 
 		// if there are more children, or this is the root node, don't try and delete
