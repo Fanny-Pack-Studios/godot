@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PR #4 — Upstream 3.x Update: Change Classification &amp; Breaking-Change Analysis</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1d212b;
+    --border: #2a2f3a;
+    --text: #e6e9ef;
+    --muted: #9aa3b2;
+    --accent: #7c9cff;
+    --green: #3ecf8e;
+    --yellow: #f5c84c;
+    --orange: #f29b38;
+    --red: #f05555;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.55;
+    font-size: 15px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 28px 80px; }
+  header.hero {
+    border: 1px solid var(--border);
+    background: linear-gradient(180deg, #1a1f2b, #14171f);
+    border-radius: 14px;
+    padding: 30px 32px;
+    margin-bottom: 28px;
+  }
+  h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: -0.3px; }
+  .subtitle { color: var(--muted); font-size: 14px; }
+  .badge {
+    display: inline-block; font-family: var(--mono); font-size: 12px;
+    padding: 2px 8px; border-radius: 6px; background: var(--panel-2);
+    border: 1px solid var(--border); color: var(--muted); margin-right: 6px;
+  }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 22px 0 8px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .card .num { font-size: 24px; font-weight: 700; color: var(--accent); font-family: var(--mono); }
+  .card .lbl { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  h2 {
+    font-size: 20px; margin: 42px 0 14px; letter-spacing: -0.2px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+  h2 .anchor { color: var(--accent); }
+  h3 { font-size: 16px; margin: 24px 0 8px; }
+  p { margin: 8px 0; }
+  .callout {
+    border-left: 3px solid var(--accent); background: var(--panel);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin: 16px 0;
+  }
+  .callout.warn { border-left-color: var(--red); }
+  .callout.good { border-left-color: var(--green); }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; background: var(--panel); }
+  tr:hover td { background: var(--panel); }
+  code, .mono { font-family: var(--mono); font-size: 13px; background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+  .sev { display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 5px; letter-spacing: 0.3px; }
+  .sev.critical { background: rgba(240,85,85,0.15); color: var(--red); border: 1px solid rgba(240,85,85,0.4); }
+  .sev.high { background: rgba(242,155,56,0.15); color: var(--orange); border: 1px solid rgba(242,155,56,0.4); }
+  .sev.medium { background: rgba(245,200,76,0.15); color: var(--yellow); border: 1px solid rgba(245,200,76,0.4); }
+  .sev.low { background: rgba(62,207,142,0.15); color: var(--green); border: 1px solid rgba(62,207,142,0.4); }
+  .cat { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 5px; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); }
+  details { margin: 10px 0; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; }
+  summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+  ul.tight { margin: 6px 0; padding-left: 20px; }
+  ul.tight li { margin: 3px 0; }
+  .commitlist { font-family: var(--mono); font-size: 12.5px; column-width: 320px; column-gap: 28px; }
+  .commitlist li { break-inside: avoid; margin: 3px 0; color: var(--muted); }
+  .commitlist .hash { color: #566079; margin-right: 6px; }
+  .kbd { font-family: var(--mono); }
+  .toc { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 22px; margin-bottom: 10px; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc ol { margin: 6px 0 0; padding-left: 22px; }
+  .toc li { margin: 3px 0; }
+  .small { color: var(--muted); font-size: 13px; }
+  .footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>Upstream 3.x Update — Change Classification &amp; Breaking-Change Analysis</h1>
+  <div class="subtitle">
+    <span class="badge">Fanny-Pack-Studios/godot#4</span>
+    <span class="badge">base: 3.x-fannypack</span>
+    <span class="badge">head: 3.x (upstream)</span>
+    <span class="badge">generated 2026-08-18</span>
+  </div>
+  <div class="cards">
+    <div class="card"><div class="num">260</div><div class="lbl">Commits</div></div>
+    <div class="card"><div class="num">677</div><div class="lbl">Files changed</div></div>
+    <div class="card"><div class="num">+129,076</div><div class="lbl">Insertions</div></div>
+    <div class="card"><div class="num">−48,396</div><div class="lbl">Deletions</div></div>
+    <div class="card"><div class="num">~18 mo</div><div class="lbl">Upstream span</div></div>
+  </div>
+</header>
+
+<div class="callout">
+  <strong>TL;DR —</strong> This PR brings ~18 months of upstream <code>3.x</code> maintenance
+  (Jan&nbsp;2025 → Aug&nbsp;2026) into the fork. The engine-facing changes are <strong>mostly
+  additive and backward-compatible for GDScript</strong> — no GDScript API was removed. The real
+  risk is concentrated at the <strong>C++ / build-system level</strong>: the bump to
+  <strong>C++17</strong>, a deep refactor of the core containers
+  (<code>LocalVector</code>/<code>PoolVector</code>/<code>Vector</code>/<code>Span</code>), and the
+  switch from <code>dynamic_cast</code> to Godot's built-in casting. Those affect the fork's own
+  C++ code — the <strong>GodotSteam module</strong> and the <strong>custom navigation</strong>
+  changes — and must be verified with a clean compile, not just a merge.
+</div>
+
+<div class="toc">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#summary">Executive summary</a></li>
+    <li><a href="#scope">Scope &amp; methodology</a></li>
+    <li><a href="#classification">Change classification</a></li>
+    <li><a href="#breaking">Breaking changes <span style="color:var(--red)">(what to worry about)</span></a></li>
+    <li><a href="#fork">Fork-specific conflict &amp; compile-risk analysis</a></li>
+    <li><a href="#recommendations">Recommendations</a></li>
+    <li><a href="#commits">Full commit list</a></li>
+  </ol>
+</div>
+
+<h2 id="summary"><span class="anchor">1.</span> Executive summary</h2>
+
+<p>The PR merges <code>godotengine/godot</code> <code>3.x</code> into the fork's
+<code>3.x-fannypack</code> branch. The fork last synced with upstream around commit
+<code>5e904cd4</code> (<em>2025-01-22</em>); the fork's branch then diverged with 37 commits of its
+own (GodotSteam, navigation, CI). This PR replays the 260 upstream commits accumulated since.</p>
+
+<p>Two forces dominate the diff:</p>
+<ul>
+  <li><strong>Volume is dominated by third-party updates.</strong> The mbedTLS upgrade
+    (2.28 → 3.6.7) and libpng (1.6.58) account for ~90&nbsp;K lines of the 129&nbsp;K insertions.
+    These are dependency bumps, mostly invisible to game code.</li>
+  <li><strong>Semantic change is dominated by the Physics Interpolation rework.</strong> Over 50 of
+    the 260 commits belong to the "FTI" (fixed-timestep interpolation) effort, culminating in moving
+    3D interpolation from <code>VisualServer</code> into <code>SceneTree</code>. The user-facing
+    API is preserved, but the implementation is essentially rewritten.</li>
+</ul>
+
+<p><strong>Bottom line:</strong> for a GDScript-only game, this update is low-risk and mostly
+beneficial (bug fixes, performance, security). The meaningful work is making sure the fork's
+<strong>custom C++ code compiles and behaves correctly</strong> against the new core — this is where
+the only real breaking changes live.</p>
+
+<h2 id="scope"><span class="anchor">2.</span> Scope &amp; methodology</h2>
+
+<p>The analysis was done directly against the local repository:</p>
+<ul class="tight">
+  <li><strong>Merge base</strong> (common ancestor of both branches): <code>5e904cd4</code> (upstream PR #100389, 2025-01-22).</li>
+  <li><strong>Base</strong> <code>3.x-fannypack</code> = <code>6bd8e11f</code> (2025-02-17, "Fix crash del editor al seleccionar nodos").</li>
+  <li><strong>Head</strong> <code>3.x</code> = <code>e1e12161</code> (2026-08-18, upstream PR #122508).</li>
+</ul>
+<p>Upstream changes were enumerated with <code>git rev-list</code> / <code>git diff</code> between the
+merge base and head, then classified by commit message and by files touched. The fork's own 37 commits
+were diffed separately to locate conflict and compile risks.</p>
+
+<h2 id="classification"><span class="anchor">3.</span> Change classification</h2>
+
+<p>The 260 commits group into the following areas (counts are approximate; some commits span areas):</p>
+
+<table>
+  <thead><tr><th>Category</th><th>≈ Commits</th><th>What it contains</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><span class="cat">Physics Interpolation (FTI)</span></td>
+      <td>~54</td>
+      <td>Complete rework of 3D interpolation, moved from <code>VisualServer</code> to
+        <code>SceneTree</code>. New <code>InterpolatedProperty</code>, custom wheel interpolation,
+        editor warnings for non-interpolated physics bodies, a large number of bug fixes
+        (CPUParticles, MultiMesh, exit-tree, <code>disable_scale</code>, toplevel/multimesh resets,
+        separate-thread rendering compatibility).</td>
+    </tr>
+    <tr>
+      <td><span class="cat">Core containers &amp; C++ modernization</span></td>
+      <td>~41</td>
+      <td>C++17 bump with SCons compiler checks; new <code>Span</code> type; <code>PoolVector</code>
+        becomes a wrapper for <code>LocalVector</code>; removal of implicit
+        <code>LocalVector→Vector</code> and <code>LocalVector→PoolVector</code> conversions; move
+        semantics for <code>Vector</code>/<code>CowData</code>; binary-search
+        <code>ordered_insert</code>; <code>Node</code>/<code>Spatial</code>/<code>CanvasItem</code>
+        children moved to <code>LocalVector</code>.</td>
+    </tr>
+    <tr>
+      <td><span class="cat">Object system &amp; casting</span></td>
+      <td>~19</td>
+      <td>In-built <code>cast_to</code> replaces <code>dynamic_cast</code> on all platforms;
+        simplified/templated <code>ObjectDB::get_instance()</code>; faster <code>derives_from</code>
+        (<code>if constexpr</code>), <code>is_reference</code>, and ancestral-class casting; quick
+        access to <code>Object</code> ancestry.</td>
+    </tr>
+    <tr>
+      <td><span class="cat">Rendering</span></td>
+      <td>~19</td>
+      <td>New <strong>blob shadows</strong> feature (<code>BlobShadow</code> / <code>BlobFocus</code>
+        nodes, GLES2/GLES3 shader additions, <code>VisualServer</code> support); LOD manager
+        auto-deactivation; batching MultiRect fix; BVH correctness/performance fixes.</td>
+    </tr>
+    <tr>
+      <td><span class="cat">Platform support</span></td>
+      <td>~22</td>
+      <td>iOS: UIScene windows, min version 15.0, 32-bit removed. Android: version bumps, API 35 UI
+        changes, min SDK 21, Xbox controller fix. Windows: nonexclusive fullscreen backport,
+        rcedit-free template modification, MinGW SDK fix. macOS 26 build fix. Linux TTS deadlock fix.
+        DDS texture loader backport.</td>
+    </tr>
+    <tr>
+      <td><span class="cat">Security &amp; third-party</span></td>
+      <td>~16</td>
+      <td>mbedTLS 2.28 → 3.6.7 (with Godot OS as entropy source, <code>OS::get_entropy</code>
+        backport); libpng 1.6.58; libwebm double-free fix (CVE-2019-2126); CA certs sync; Nahimic
+        code-injection disabled on Windows.</td>
+    </tr>
+    <tr>
+      <td><span class="cat">Audio</span></td>
+      <td>~8</td>
+      <td>AudioServer mute feature (Dummy-driver switching with mute-state flags); WASAPI buffer-size
+        fix (crackling); PulseAudio <code>maxlength</code> init; muting disallowed on Android.</td>
+    </tr>
+    <tr>
+      <td><span class="cat">Editor</span></td>
+      <td>~14</td>
+      <td>Copy system info to clipboard; class display in Create dialog; TileSet selected-tile
+        highlight; tooltips cancel on mouse-leave; TextureProgress radial-angle improvements.</td>
+    </tr>
+    <tr>
+      <td><span class="cat">Scripting / API</span></td>
+      <td>~6</td>
+      <td>Viewport helpers (<code>gui_release_focus</code>, <code>gui_get_focus_owner</code>,
+        <code>gui_get_hovered_control</code>); <code>Quat</code> from two <code>Vector3</code>s;
+        GDScript signature-hint fix; <code>Range::set_value</code> revert.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2 id="breaking"><span class="anchor">4.</span> Breaking changes <span style="color:var(--red)">— what to worry about</span></h2>
+
+<p>Ordered by how likely each is to bite this fork. <strong>Nothing here breaks GDScript
+projects.</strong> Every item is a C++/build/dependency/behavioral concern.</p>
+
+<table>
+  <thead>
+    <tr><th style="width:90px">Severity</th><th style="width:170px">Area</th><th>Change &amp; impact</th><th>Action for the fork</th></tr>
+  </thead>
+  <tbody>
+
+    <tr>
+      <td><span class="sev critical">CRITICAL</span></td>
+      <td>Build system</td>
+      <td><strong>C++17 is now required and enforced.</strong> <code>SConstruct</code> hard-fails on
+        GCC &lt; 9, Clang &lt; 6, Apple Clang &lt; 10, and MSVC &lt; 2017 15.9. The fork's CI
+        (GitHub Actions workflows) and any local toolchains must satisfy this or builds will abort at
+        configure time.</td>
+      <td>Verify CI build images and local compilers meet the minimums. This is a hard gate, not a warning.</td>
+    </tr>
+
+    <tr>
+      <td><span class="sev high">HIGH</span></td>
+      <td>Core containers (C++)</td>
+      <td><code>PoolVector</code> is now a wrapper over <code>LocalVector</code>; implicit
+        <code>LocalVector→Vector</code> and <code>LocalVector→PoolVector</code> conversions were
+        <strong>removed</strong>, replaced by an explicit <code>Vector(Span)</code> constructor and
+        explicit <code>Span</code> conversions. Move semantics were added; <code>[[lifetimebound]]</code>
+        was introduced. Any C++ module relying on the old implicit conversions will fail to compile.</td>
+      <td>Compile the fork's C++ modules against the new headers. GodotSteam only declares
+        <code>PoolVector&lt;uint64_t&gt;</code> directly (low risk), but this must be confirmed.</td>
+    </tr>
+
+    <tr>
+      <td><span class="sev high">HIGH</span></td>
+      <td>Object casting (C++)</td>
+      <td><code>dynamic_cast</code> was replaced by Godot's in-built <code>cast_to</code> on all
+        platforms; <code>ObjectDB::get_instance()</code> is now templated (nominally backward
+        compatible); <code>Object::derives_from</code> / <code>is_reference</code> / ancestry were
+        optimized. C++ code using <code>dynamic_cast</code> or the old <code>get_instance</code>
+        signature is affected.</td>
+      <td>Audit custom C++ for <code>dynamic_cast</code> and <code>ObjectDB::get_instance</code> usage. None found in the fork's nav/CSG/triangle edits.</td>
+    </tr>
+
+    <tr>
+      <td><span class="sev high">HIGH</span></td>
+      <td>Scene-tree internals (C++)</td>
+      <td><code>Node</code>, <code>Spatial</code> and <code>CanvasItem</code> now store children in
+        <code>LocalVector</code> instead of <code>Vector</code>; <code>Spatial::_is_vi_visible()</code>
+        and the <code>vi_visible</code> flag were removed. C++ that reaches into <code>children</code>
+        directly (not via <code>get_children()</code>) or calls <code>_is_vi_visible()</code> breaks.</td>
+      <td>The fork's navigation code iterates via public APIs; confirm no direct <code>children</code> access remains.</td>
+    </tr>
+
+    <tr>
+      <td><span class="sev medium">MEDIUM</span></td>
+      <td>Dependency</td>
+      <td><strong>mbedTLS 2.28 → 3.6.7</strong> is a major crypto-library API break (PSA crypto, config
+        changes), though bundled and re-glued internally. SSL/TLS and crypto behavior changes; entropy
+        now sourced from Godot's OS. Only matters if the fork (or a module) calls
+        <code>modules/mbedtls</code> directly — Steamworks does its own networking, so GodotSteam is
+        unaffected.</td>
+      <td>None expected, but be aware if any custom code touches the mbedTLS API.</td>
+    </tr>
+
+    <tr>
+      <td><span class="sev medium">MEDIUM</span></td>
+      <td>Physics Interpolation (behavior)</td>
+      <td>3D interpolation was rewritten into <code>SceneTree</code> ("same user API", but a complete
+        rework). For games with <code>physics/common/physics_interpolation</code> enabled, visuals and
+        edge-cases can change; new editor warnings flag non-interpolated physics bodies; ARVR nodes now
+        default to interpolation off.</td>
+      <td>Playtest if the project uses physics interpolation. Verify the fork's navigation/Steam interplay (which is physics-adjacent) still looks right.</td>
+    </tr>
+
+    <tr>
+      <td><span class="sev medium">MEDIUM</span></td>
+      <td>Audio (behavior)</td>
+      <td>New AudioServer mute feature. <strong>Editor now defaults to the Dummy driver when there is no
+        audio output</strong> (CPU reduction). Adds project/editor settings; muting is disallowed on
+        Android. Mostly an editor/runtime optimization, not a gameplay break.</td>
+      <td>None for the game; just be aware editor audio may be muted until an output exists.</td>
+    </tr>
+
+    <tr>
+      <td><span class="sev medium">MEDIUM</span></td>
+      <td>UI behavior</td>
+      <td><code>Range::set_value</code> revert restores signal emission even when the value is
+        unchanged (undoing the "no emit on unchanged" optimization). Subtle: UI code that relied on the
+        newer behavior may see extra <code>value_changed</code> signals.</td>
+      <td>Low risk; note if any UI depends on the suppress-on-unchanged behavior.</td>
+    </tr>
+
+    <tr>
+      <td><span class="sev low">LOW</span></td>
+      <td>C# / Mono</td>
+      <td><code>MonoGCHandle</code> moved into the <code>gdmono</code> namespace to avoid conflicts with
+        mono 6.14.</td>
+      <td>Only relevant to C#/Mono builds. Ignore if the fork is GDScript/C++ only.</td>
+    </tr>
+
+    <tr>
+      <td><span class="sev low">LOW</span></td>
+      <td>Platform floors</td>
+      <td>iOS min 15.0 and 32-bit removed; Android min SDK 21 and API 35 UI adjustments; new opt-in
+        nonexclusive fullscreen on Windows.</td>
+      <td>Only if shipping to those platforms with older targets.</td>
+    </tr>
+
+  </tbody>
+</table>
+
+<h2 id="fork"><span class="anchor">5.</span> Fork-specific conflict &amp; compile-risk analysis</h2>
+
+<p>The fork's branch adds 37 commits on top of the merge base, concentrated in four places. Their
+collision surface with this PR:</p>
+
+<table>
+  <thead><tr><th>Fork change</th><th>Files</th><th>Conflict with upstream?</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>GodotSteam module</td>
+      <td><code>modules/godotsteam/*</code> (~27 K lines)</td>
+      <td>No conflict (new module)</td>
+      <td>Must still <strong>compile</strong> against new core. Only 2 uses of
+        <code>PoolVector&lt;uint64_t&gt;</code> (declarations only) — very likely fine, but verify with
+        a build.</td>
+    </tr>
+    <tr>
+      <td>Background navmap sync</td>
+      <td><code>modules/navigation/nav_map.*</code>, <code>nav_region.*</code>, <code>nav_utils.h</code></td>
+      <td>No conflict — upstream only touched <code>scene/2d/navigation_polygon.*</code></td>
+      <td>Uses <code>LocalVector</code> directly (no implicit conversions needed), so the container
+        refactor is compatible. Recompile to confirm.</td>
+    </tr>
+    <tr>
+      <td>MSVC crash workarounds</td>
+      <td><code>core/math/triangle_mesh.cpp</code> (<code>#pragma optimize</code>),
+        <code>modules/csg/csg.cpp</code> (evil print), <code>editor/spatial_editor_gizmos.cpp</code>
+        (<code>volatile</code>)</td>
+      <td>Only <code>spatial_editor_gizmos.cpp</code> is also touched upstream — but in different
+        regions (line ~536 and end-of-file), so git should auto-merge</td>
+      <td>These work around an MSVC optimization bug. Keep them, but re-test the original crash after
+        the C++17/toolchain bump — the workaround may or may not still be needed.</td>
+    </tr>
+    <tr>
+      <td>CI workflows</td>
+      <td><code>.github/workflows/*</code>, <code>.github/actions/godot-build/action.yml</code></td>
+      <td><strong>Yes — likely.</strong> Both sides edited <code>godot-build/action.yml</code> (fork
+        added a <code>debug_symbols</code> input; upstream changed the scons-cache default path).
+        Fork also deleted <code>runner.yml</code> and modified the three build workflows; upstream added
+        cache-restore/save actions.</td>
+      <td>Expect a manual merge here; the fork's custom inputs (<code>debug_symbols</code>) must be
+        preserved alongside upstream's cache-path change.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout good">
+  <strong>Good news:</strong> the fork's navigation and CSG/triangle changes touch files upstream
+  never modified in this range, and its <code>LocalVector</code>/<code>PoolVector</code> usage is
+  already compatible with the new container API. The only genuine merge-conflict hotspots are
+  <code>spatial_editor_gizmos.cpp</code> (minor) and the CI action/workflow files.
+</div>
+
+<h2 id="recommendations"><span class="anchor">6.</span> Recommendations</h2>
+
+<ol>
+  <li><strong>Merge, then compile before reviewing behavior.</strong> The single highest-value check
+    is a clean <code>scons</code> build of the merged tree (especially the GodotSteam module and
+    navigation code) under the C++17 toolchain.</li>
+  <li><strong>Resolve the CI workflow merge manually</strong> — preserve the fork's
+    <code>debug_symbols</code> input while adopting upstream's <code>.scons_cache/</code> path and new
+    cache actions.</li>
+  <li><strong>Verify the toolchain floor</strong> across CI images and dev machines (GCC ≥ 9 / Clang ≥ 6 /
+    MSVC ≥ 2017 15.9). This is enforced at configure time and is the only "build will not start" risk.</li>
+  <li><strong>Playtest physics interpolation</strong> if the project enables it — the 3D interpolation
+    rework is the largest behavioral change and its bugs would surface as visual jitter/teleporting,
+    not crashes.</li>
+  <li><strong>Re-test the original "crash al seleccionar nodos" fix.</strong> The MSVC workarounds
+    (<code>#pragma optimize</code>, <code>volatile</code>, evil print) may interact with the new
+    compiler flags; confirm the crash stays fixed.</li>
+  <li><strong>Take the security wins.</strong> The mbedTLS 3.6.7, libpng 1.6.58, libwebm CVE-2019-2126
+    and CA-cert updates are pure upgrades — no reason to defer them.</li>
+</ol>
+
+<h2 id="commits"><span class="anchor">7.</span> Full commit list (260)</h2>
+<details>
+  <summary>Expand / collapse</summary>
+  <ul class="commitlist">
+<li><span class="hash">e1e12161f2</span>Merge pull request #122508 from lawnjelly/bvh_signbit_optimization</li>
+<li><span class="hash">d72f7888b9</span>`BVH` - std::signbit optimization</li>
+<li><span class="hash">7dfefdfb83</span>Merge pull request #122506 from akien-mga/3.x-libpng-1.6.58</li>
+<li><span class="hash">8dd99ae663</span>libpng: Update to 1.6.58</li>
+<li><span class="hash">3b4ee9311d</span>Merge pull request #122267 from AThousandShips/cache_ping_3_x</li>
+<li><span class="hash">998f2cc627</span>Merge pull request #122467 from lawnjelly/fix_WASAPI_message</li>
+<li><span class="hash">044207cf5f</span>Merge pull request #121501 from lawnjelly/bvh_small_fixes</li>
+<li><span class="hash">9c8e5a442d</span>Suppress error when device is invalidated after `IAudioClient::GetBufferSize`</li>
+<li><span class="hash">9b70247951</span>Merge pull request #122324 from bruvzg/3x_ios_ver</li>
+<li><span class="hash">d63358b1f0</span>[iOS] Bump min. version to 15.0, remove 32-bit code, add min. target export option.</li>
+<li><span class="hash">0f02472cc4</span>Merge pull request #122280 from lawnjelly/fix_poolvector_cow</li>
+<li><span class="hash">d586d861f1</span>Fix `PoolVector` COW behaviour with concurrent `Read`</li>
+<li><span class="hash">a40596a323</span>[Buildsystem] Ping `master` cache after saving cache</li>
+<li><span class="hash">a0414dd6f4</span>Merge pull request #121463 from lawnjelly/poolvector2_electric_boogaloo</li>
+<li><span class="hash">77868dcd9c</span>Replace `PoolVector` with a wrapper for `LocalVector`</li>
+<li><span class="hash">ee908a43ca</span>Merge pull request #122117 from lawnjelly/fix_WASAPI_crackling</li>
+<li><span class="hash">1e7a97a9cc</span>Fix audio crackling issues due to incorrect WASAPI buffer size</li>
+<li><span class="hash">6ac964295f</span>Merge pull request #121894 from Faless/crypto/get_entropy</li>
+<li><span class="hash">1647e83e24</span>mbedTLS: Always use Godot&#x27;s OS as entropy source</li>
+<li><span class="hash">0d14b830a5</span>core: Backport OS::get_entropy from 4.x</li>
+<li><span class="hash">fb465d85a3</span>Merge pull request #106556 from lawnjelly/disable_gpu_threaded_opt</li>
+<li><span class="hash">cbe73b148e</span>Merge pull request #121527 from lawnjelly/vector_improvements</li>
+<li><span class="hash">4def91da1c</span>`Vector` &amp; `LocalVector` ordered_insert uses binary search</li>
+<li><span class="hash">8799d8bf43</span>Merge pull request #121526 from lawnjelly/vector_less_writes</li>
+<li><span class="hash">0a680acaaa</span>`Vector` reduce writes in `invert` &amp; `append`</li>
+<li><span class="hash">f6c8ce7ca9</span>Merge pull request #121523 from lawnjelly/vector_move_semantics</li>
+<li><span class="hash">b0e2278e91</span>Merge pull request #121521 from lawnjelly/fix_cowdata_span_constructor_crash</li>
+<li><span class="hash">d6ece310ec</span>`Vector` and `CowData` move semantics</li>
+<li><span class="hash">bb19284d72</span>Fix crash in `CowData` `Span` constructor with empty span</li>
+<li><span class="hash">aab13d6f26</span>Minor BVH correctness fixes</li>
+<li><span class="hash">0843454fb8</span>Merge pull request #121431 from lawnjelly/fix_cowdata_span</li>
+<li><span class="hash">a4340a4553</span>Fix `CowData` `Span` constructor.</li>
+<li><span class="hash">ade270115c</span>Merge pull request #115189 from lawnjelly/blob_fade_stable</li>
+<li><span class="hash">ded382ee83</span>Merge pull request #112807 from lawnjelly/blob_hide_exit_tree</li>
+<li><span class="hash">efc71380a2</span>`BlobShadows` - Ensure blob shadow is hidden when light exits tree</li>
+<li><span class="hash">5a8d51ea24</span>Blob Shadows - Fade is frame rate independent, and configurable</li>
+<li><span class="hash">093c80362f</span>Merge pull request #121110 from Repiteo/mbedtls-3.x</li>
+<li><span class="hash">febf6d8a7a</span>mbedTLS: Update to 3.6.7</li>
+<li><span class="hash">61d6acc701</span>Disable GPU threaded optimizations option</li>
+<li><span class="hash">98518cee9a</span>Merge pull request #120883 from syntaxerror247/android-versions-bump</li>
+<li><span class="hash">11c9d1b700</span>[3.x] Android versions bump for 2026</li>
+<li><span class="hash">525b946356</span>Merge pull request #120812 from Ivorforce/vector-span-construct-3x</li>
+<li><span class="hash">031bc0e073</span>Replace `LocalVector.operator Vector` with `Vector(Span)` constructor.</li>
+<li><span class="hash">8573134cd5</span>Merge pull request #120815 from lawnjelly/local_vector_signed_span</li>
+<li><span class="hash">c5cb85caf1</span>Ensure `LocalVector` `span()` count is unsigned</li>
+<li><span class="hash">0da93bbf8c</span>Merge pull request #120807 from lawnjelly/fix_local_vector_bugs</li>
+<li><span class="hash">a2f45e45a1</span>Minor LocalVector Improvements</li>
+<li><span class="hash">59059dd535</span>Merge pull request #120762 from lawnjelly/lifetime_bound</li>
+<li><span class="hash">13d0504755</span>Add [[lifetimebound]] attribute</li>
+<li><span class="hash">de4e0eacb2</span>Merge pull request #120685 from lawnjelly/improve_safe_unproject_position</li>
+<li><span class="hash">7feed845a3</span>Fix `safe_unproject_position()`</li>
+<li><span class="hash">218d4a5384</span>Merge pull request #120612 from o01eg/cherry-pick-gradle-output-3.x</li>
+<li><span class="hash">cb717b2d49</span>Preserve the output from the gradle build command</li>
+<li><span class="hash">4927fd7a2c</span>Merge pull request #120627 from lawnjelly/fix_dinput_gamepad</li>
+<li><span class="hash">fa77a3b02d</span>Fix new CI compiler warnings</li>
+<li><span class="hash">b8f0d51e63</span>Merge pull request #117823 from lawnjelly/fti_fix_property_release</li>
+<li><span class="hash">a758f086be</span>`FTI` - Fix property release updates</li>
+<li><span class="hash">03016107fc</span>Merge pull request #114212 from RandomShaper/natvis_3.x</li>
+<li><span class="hash">ff2730aaa4</span>Merge pull request #68449 from dalexeev/3.x-gds-fix-no-hint</li>
+<li><span class="hash">4bf9324fe6</span>Merge pull request #116531 from lawnjelly/mutex_lock_no_discard</li>
+<li><span class="hash">7ca6a06e71</span>Mark MutexLock as NO_DISCARD to prevent misuse.</li>
+<li><span class="hash">07f9e2bb47</span>[3.x] GDScript: Fix missing function signature hint</li>
+<li><span class="hash">a262cc3750</span>Merge pull request #114210 from RandomShaper/avoid_redundant_values_3.x</li>
+<li><span class="hash">f505f5a192</span>Merge pull request #114211 from RandomShaper/physics_interp_mt_rs_3.x</li>
+<li><span class="hash">2f9f0f2d0e</span>Use approximate test when comparing properties, thoroughly</li>
+<li><span class="hash">49700eb84b</span>Make physics interpolation compatible with separate-thread rendering</li>
+<li><span class="hash">e94c0069cb</span>Update Natvis for Variant:::OBJECT</li>
+<li><span class="hash">42b054a401</span>Merge pull request #112755 from lawnjelly/fix_gles3_blob_shadow_builtin</li>
+<li><span class="hash">76bdc0695d</span>`BlobShadows` - Fix `GLES3` shader builtin</li>
+<li><span class="hash">a117d512b0</span>Merge pull request #112170 from lawnjelly/disallow_muting_android</li>
+<li><span class="hash">9eae65384c</span>Disallow muting on Android</li>
+<li><span class="hash">0a9011743f</span>Merge pull request #111195 from lawnjelly/fti_fix_2d_non_interpolated</li>
+<li><span class="hash">e2621e5517</span>Merge pull request #110481 from Cheeseness/73671_backport</li>
+<li><span class="hash">cfff242da2</span>Merge pull request #109520 from bruvzg/mod_res_3x</li>
+<li><span class="hash">001efb4ed9</span>Merge pull request #112029 from twrightsman/fix/add-recast-flags</li>
+<li><span class="hash">4548440193</span>Add proper flags when using external recast</li>
+<li><span class="hash">5fdd9180fb</span>mbedTLS: Update to version 3.6.5</li>
+<li><span class="hash">b829e0d085</span>[3.x] Export: Modify Windows template without rcedit</li>
+<li><span class="hash">4389e0fd34</span>Merge pull request #111584 from Ivorforce/localvector-from-span-explicit</li>
+<li><span class="hash">5fc653c1ba</span>Merge pull request #111581 from lawnjelly/span2</li>
+<li><span class="hash">d78e3b050e</span>Make `LocalVector` -&gt; `Span` conversion function explicit.</li>
+<li><span class="hash">c59ef69184</span>`Span` - update more `Geometry` API to use span</li>
+<li><span class="hash">5b8789e83a</span>Merge pull request #111424 from lawnjelly/span</li>
+<li><span class="hash">db9921b17f</span>Add `Span` and some basic uses from `Geometry`.</li>
+<li><span class="hash">f41edf2a03</span>Merge pull request #84804 from lawnjelly/blob_shadows</li>
+<li><span class="hash">fb2d2bafe0</span>Merge pull request #111443 from lawnjelly/fti_fix_scene_tree_depth_limit</li>
+<li><span class="hash">758bc38071</span>FTI - Fix `SceneTreeFTI` depth limit behaviour</li>
+<li><span class="hash">b3b8908066</span>FTI - Optimize non-interpolated 2D items</li>
+<li><span class="hash">8c10cd6646</span>Merge pull request #111079 from lawnjelly/fix_mbedtls_typo</li>
+<li><span class="hash">5908ce21bf</span>Merge pull request #111103 from bruvzg/uiscene_3x</li>
+<li><span class="hash">ec5920e004</span>[iOS, 3.x] Switch window creation to UIScene.</li>
+<li><span class="hash">dedf461674</span>Add blob shadows feature</li>
+<li><span class="hash">e9af21fe1b</span>Merge pull request #109111 from lawnjelly/fix_multirect_cast</li>
+<li><span class="hash">3f7046272e</span>Merge pull request #107702 from lawnjelly/faster_children_iteration</li>
+<li><span class="hash">648e8534cb</span>Fix `mbedtls` readme duplicated text</li>
+<li><span class="hash">cbc8543df6</span>Merge pull request #111061 from InfoDevkota/3.x</li>
+<li><span class="hash">e9525aed1c</span>set minsdk to 21. Sorted the fseeko error.</li>
+<li><span class="hash">b3fbca1e0d</span>Merge pull request #110898 from Calinou/macos-26-fix-build-3.x</li>
+<li><span class="hash">b86295c8b9</span>Fix build on macOS 26 by removing AGL framework link</li>
+<li><span class="hash">13ea0d64a5</span>[3.x] Linux/TTS: Fix speechd deadlock</li>
+<li><span class="hash">d0dbb2f0af</span>Merge pull request #108382 from Faless/mbedtls/3.x_update_to_mbedtls_3.6.4</li>
+<li><span class="hash">df4bca6b6a</span>Merge pull request #109700 from BlueCube3310/3x-dds-impr</li>
+<li><span class="hash">6b897e90f8</span>Merge pull request #110255 from syntaxerror247/API-35-ui-changes</li>
+<li><span class="hash">dd6144344a</span>Merge pull request #110414 from timothyqiu/sc-paths-3.x</li>
+<li><span class="hash">d164a70aa0</span>Fix Open Editor Data/Settings Folder menu in self-contained mode</li>
+<li><span class="hash">936c86b190</span>[3.x] Address API 35 UI changes</li>
+<li><span class="hash">5aed565de5</span>Merge pull request #107583 from bruvzg/non_ex_fs</li>
+<li><span class="hash">040e769da6</span>Merge pull request #110059 from lawnjelly/fix_visible_out_of_tree</li>
+<li><span class="hash">e56cf87f3c</span>Fix `is_visible_in_tree` regression for out of tree</li>
+<li><span class="hash">d926ccf7e6</span>Merge pull request #109695 from Maran23/3.x-rtl-line-breaking</li>
+<li><span class="hash">79fbd93008</span>[3.x] DDS: Backport fixes from 4.x branch</li>
+<li><span class="hash">c7bace1955</span>Fix Line breaking may not work correctly when using color tags with specific font</li>
+<li><span class="hash">e4c1dbf501</span>Merge pull request #108433 from WolfgangSenff/bump-3x-android-version-numbers</li>
+<li><span class="hash">3c645995ca</span>Update NDK and Maven config</li>
+<li><span class="hash">1f4dce03b2</span>Merge pull request #108930 from kilian-diener/backport-macos-template-fix</li>
+<li><span class="hash">9b104b3bb8</span>`Batching` - Fix `MultiRect` casting to wrong type</li>
+<li><span class="hash">983b12b1fa</span>Fix order of operations for macOS template check</li>
+<li><span class="hash">cd9713e890</span>Fast child iteration in `Node`, `Spatial`, `CanvasItem`</li>
+<li><span class="hash">21d7340162</span>Update required version numbers for Android</li>
+<li><span class="hash">0770c9a4a3</span>mbedTLS: Update to mbedTLS 3.6.4</li>
+<li><span class="hash">17b5769d56</span>Merge pull request #108199 from Ivorforce/3x-derives-from-if-constexpr</li>
+<li><span class="hash">64fa38b53f</span>Use `if constexpr` in `Object::derives_from`.</li>
+<li><span class="hash">83f48a4c71</span>Merge pull request #108171 from lawnjelly/clear_script</li>
+<li><span class="hash">e4449b847f</span>Merge pull request #108120 from lawnjelly/fti_multimesh_reset_all3</li>
+<li><span class="hash">287cf32ce2</span>Fix inability to assign script after clearing</li>
+<li><span class="hash">8436e0d086</span>Merge pull request #107851 from lawnjelly/scons_check_compiler_version</li>
+<li><span class="hash">79de85191c</span>Merge pull request #107847 from lawnjelly/bump_c++17</li>
+<li><span class="hash">6b8cb9a917</span>Merge pull request #108159 from lawnjelly/lods_throttledown</li>
+<li><span class="hash">98567a0375</span>`LODManager` - Auto-deactivate when no LODs</li>
+<li><span class="hash">0715aa89e3</span>Merge pull request #108116 from lawnjelly/fti_multimesh_stable_buffer</li>
+<li><span class="hash">2163855d6e</span>Merge pull request #108117 from lawnjelly/fti_toplevel_resets3</li>
+<li><span class="hash">67ef4127b1</span>Merge pull request #108132 from lawnjelly/fti_clear_all3</li>
+<li><span class="hash">97d3916e08</span>Merge pull request #108169 from lawnjelly/editor_get_cached</li>
+<li><span class="hash">0718852d2c</span>Add `EditorSettings` `EDITOR_GET_CACHED`</li>
+<li><span class="hash">50a684cf88</span>FTI - Clear all when enabling / disabling `SceneTreeFTI`</li>
+<li><span class="hash">8bf24dcc44</span>FTI - Add `multimesh_instances_reset_physics_interpolation()`</li>
+<li><span class="hash">e13227419f</span>FTI - Add reset of setting `toplevel`</li>
+<li><span class="hash">15d143390d</span>FTI - Fix `MultiMesh` stable behaviour</li>
+<li><span class="hash">4aa8ecd6be</span>Scons - add compiler requirements</li>
+<li><span class="hash">1a7d99e37d</span>Merge pull request #107949 from lawnjelly/revert_reduce_xform_changed</li>
+<li><span class="hash">8c6198a58f</span>Revert &quot;FTI - Reduce `VisualInstance` xform notifications&quot;</li>
+<li><span class="hash">c34001675e</span>Merge pull request #107889 from lawnjelly/fti_global_setting_static3</li>
+<li><span class="hash">30cb6ec66e</span>[Windows] Rename `PKEY_Device_FriendlyName` to avoid duplicate symbols with newer MinGW SDKs.</li>
+<li><span class="hash">5743ec5f51</span>Merge pull request #107696 from timothyqiu/revert-hover-pressed-3.x</li>
+<li><span class="hash">cd5503a5e0</span>Merge pull request #107877 from lawnjelly/is_reference</li>
+<li><span class="hash">a298f63924</span>`FTI` - Change `SceneTree` global setting to static</li>
+<li><span class="hash">ac46a86c44</span>Optimize hotspots with `Object::is_reference()`</li>
+<li><span class="hash">784f92a646</span>Merge pull request #107881 from lawnjelly/derives_from</li>
+<li><span class="hash">aec5bf47dd</span>Optimize hotspots with `Object::derives_from`</li>
+<li><span class="hash">3aaabb6148</span>Merge pull request #107844 from Ivorforce/3x-cast-to-ancestral</li>
+<li><span class="hash">aa63595b83</span>Use ancestral classes to speed up `Object::cast_to` when possible.</li>
+<li><span class="hash">84f761ba54</span>Merge pull request #107493 from lawnjelly/remove_vi_visible</li>
+<li><span class="hash">c6f91900da</span>Merge pull request #107462 from lawnjelly/quick_ancestry</li>
+<li><span class="hash">9e76b160a9</span>Merge pull request #107781 from john-breton/3.6</li>
+<li><span class="hash">b61a7a2801</span>Merge pull request #107694 from DeeJayLSP/3.x-fix-large-wav</li>
+<li><span class="hash">53d8b958c5</span>libwebm: Fix double free in mkvparser ContentEncoding</li>
+<li><span class="hash">a24e93af4b</span>Merge pull request #90464 from timothyqiu/quat-to</li>
+<li><span class="hash">ae786bd43a</span>Provide quick access to `Object` ancestry</li>
+<li><span class="hash">312d13b897</span>Allow constructing Quat from two Vector3s</li>
+<li><span class="hash">62feeaab33</span>Revert &quot;Fix Button not listing `hover_pressed` stylebox&quot;</li>
+<li><span class="hash">57159bcb8c</span>[3.x] ResourceImporterWAV: Detect if data chunk size is larger than the actual size</li>
+<li><span class="hash">6645716e32</span>Merge pull request #107544 from lawnjelly/node_children_localvector</li>
+<li><span class="hash">e208003378</span>Change `Node` children to use `LocalVector`</li>
+<li><span class="hash">7172b03b45</span>Merge pull request #107480 from lawnjelly/spat_children_linear_list</li>
+<li><span class="hash">8e48d57f4b</span>`Spatial` and `CanvasItem` children change to `LocalVector`</li>
+<li><span class="hash">e0dc103bd1</span>Bump to c++17</li>
+<li><span class="hash">e430053b16</span>Remove `_is_vi_visible()`</li>
+<li><span class="hash">62e7304ffe</span>[3.x] Backport nonexclusive fullscreen mode.</li>
+<li><span class="hash">6c3f393623</span>Merge pull request #107545 from lawnjelly/explicit_pool_vector</li>
+<li><span class="hash">661e8054ec</span>Merge pull request #107543 from lawnjelly/local_vector_explicit</li>
+<li><span class="hash">035ffd8caa</span>Remove implicit conversion from `LocalVector` to `PoolVector`</li>
+<li><span class="hash">bd47dc4b29</span>Remove implicit conversion from `LocalVector` to `Vector`</li>
+<li><span class="hash">3c35777742</span>Merge pull request #107502 from lawnjelly/3.7_cherrypicks_june25</li>
+<li><span class="hash">7560e27316</span>Fix Xbox Controller on Android</li>
+<li><span class="hash">4b96b71ede</span>Disable Nahimic code injection.</li>
+<li><span class="hash">060b6bcd28</span>Initialize pa_buffer_attr.maxlength to -1</li>
+<li><span class="hash">727790de4f</span>mbedTLS: Update to version 2.28.10</li>
+<li><span class="hash">1021146183</span>certs: Sync with upstream as of Apr 8 2025</li>
+<li><span class="hash">c416aced1a</span>Merge pull request #105681 from lawnjelly/fti_reduce_xform_notifications</li>
+<li><span class="hash">67265bacd5</span>Merge pull request #107324 from lawnjelly/is_vis_in_tree</li>
+<li><span class="hash">aea8ebf1f3</span>Merge pull request #107307 from lawnjelly/scenetreefti_get_interp_hidden</li>
+<li><span class="hash">54e5949ffb</span>Pre-calculate `is_visible_in_tree()`</li>
+<li><span class="hash">5ff65c880e</span>Merge pull request #107178 from lawnjelly/scenetreefti_fix_hidden_forced</li>
+<li><span class="hash">b94cd9bdc2</span>Merge pull request #63458 from lawnjelly/audio_mute_editor</li>
+<li><span class="hash">d164443cd3</span>Add ability to mute AudioServer.</li>
+<li><span class="hash">7b362bba82</span>FTI - `global_transform_interpolated()` on demand for invisible nodes</li>
+<li><span class="hash">f99c6b3ecd</span>`SceneTreeFTI` - Fix `force_update` flag for invisible nodes</li>
+<li><span class="hash">b6b3ec546c</span>Merge pull request #99870 from arkology/3.x_texture-progress-cross-plugin-friendly</li>
+<li><span class="hash">caf918f44f</span>Merge pull request #107043 from lawnjelly/fti_scene_tree_fix_forced3</li>
+<li><span class="hash">cc61ab2fd5</span>`SceneTreeFTI` - fix identity_xform flag getting out of sync</li>
+<li><span class="hash">5ec4fd38fa</span>FTI - Reduce `VisualInstance` xform notifications</li>
+<li><span class="hash">bc2f565470</span>Merge pull request #106872 from bruvzg/unzip_64pos3</li>
+<li><span class="hash">daf23fd4c6</span>[3.x] Fix unzSeekCurrentFile not resetting total_out_64.</li>
+<li><span class="hash">c548b21132</span>Merge pull request #105728 from lawnjelly/fti_optimize_scene_tree</li>
+<li><span class="hash">9cf1151864</span>Merge pull request #106578 from corngood/mono-fix</li>
+<li><span class="hash">65eb3a2e31</span>FTI - Optimize `SceneTree` traversal</li>
+<li><span class="hash">656eeda144</span>Merge pull request #92573 from timothyqiu/viewport-expose-3.x</li>
+<li><span class="hash">87f9b06f52</span>Expose some helper methods on Viewport</li>
+<li><span class="hash">76e2eb6394</span>Merge pull request #92950 from exyxz/fix-editor-splash</li>
+<li><span class="hash">f5b4529870</span>Merge pull request #105459 from illlustr/class-display</li>
+<li><span class="hash">7f90c622f5</span>mono: move MonoGCHandle into gdmono namespace</li>
+<li><span class="hash">036a1a3f2e</span>Improve Class display in Create dialog</li>
+<li><span class="hash">2f4336b117</span>Merge pull request #99434 from arkology/3.x_to-infinity-and-beyond</li>
+<li><span class="hash">1222ef8682</span>Merge pull request #95978 from jadoc/tooltips-outside-window-3.x</li>
+<li><span class="hash">6ffa4b80f0</span>Merge pull request #105266 from bruvzg/3x_rtl_track_custom_font_changes</li>
+<li><span class="hash">958a7c9ca6</span>Merge pull request #103355 from lawnjelly/fti_warn_physics_non_interp</li>
+<li><span class="hash">267625068e</span>Merge pull request #105439 from TheSofox/tileset-select-visbility</li>
+<li><span class="hash">675293b36b</span>Merge pull request #105977 from lawnjelly/fti_fix_3d_exit_tree3</li>
+<li><span class="hash">0a07a9a668</span>FTI - Fix `SceneTreeFTI` behaviour on exit tree</li>
+<li><span class="hash">e869e06f2a</span>Merge pull request #105948 from lawnjelly/global_get_cached_spin</li>
+<li><span class="hash">187e14b8ac</span>Improve `GLOBAL_GET_CACHED` to use `SpinLock`</li>
+<li><span class="hash">909cb94dc2</span>Merge pull request #105816 from lawnjelly/fti_hotwheels</li>
+<li><span class="hash">7a628dbe4e</span>FTI - Add custom interpolation for wheels</li>
+<li><span class="hash">bec38d9248</span>Merge pull request #105674 from illlustr/3xEditor/copy-system-info</li>
+<li><span class="hash">1571403a56</span>Add an editor option to copy system info to clipboard</li>
+<li><span class="hash">9ad73062e8</span>Physics Interpolation - Add editor warning for non-interpolated physics body</li>
+<li><span class="hash">009e0c576b</span>Merge pull request #105463 from lawnjelly/fti_fix_auto_resets2</li>
+<li><span class="hash">a2a8bef10f</span>FTI - Fix 3D auto-resets</li>
+<li><span class="hash">433bf37287</span>Make selected tile in TileSet more visible through red outline</li>
+<li><span class="hash">c3c918e285</span>Merge pull request #105407 from lawnjelly/fti_disable_scale_bug</li>
+<li><span class="hash">36e1329a4c</span>Physics Interpolation - Fix `disable_scale` bug in 3D</li>
+<li><span class="hash">3c8e71b429</span>[3.x, RTL] Track external changes in the custom fonts set by BBCode / `push_font`.</li>
+<li><span class="hash">9fccb6b2d7</span>Merge pull request #105141 from lawnjelly/fti_non_interp_fix</li>
+<li><span class="hash">2bb32734cf</span>Physics Interpolation - Fix non-interpolated resting xforms</li>
+<li><span class="hash">383ecda59c</span>Merge pull request #104920 from lawnjelly/fti_interpolated_prop</li>
+<li><span class="hash">2a420b614b</span>Merge pull request #104947 from Asaduji/arvr-node-interpolation-fix</li>
+<li><span class="hash">18c01b21e5</span>Physics Interpolation - Add InterpolatedProperty</li>
+<li><span class="hash">4d6605bed0</span>Merge pull request #104854 from lawnjelly/fti_reduce_server_updates</li>
+<li><span class="hash">fa5c589545</span>Merge pull request #104888 from lawnjelly/fti_fix_cpu_particles</li>
+<li><span class="hash">50ab06d73e</span>Change ARVR Nodes default interpolation to off</li>
+<li><span class="hash">ea5e3bfe3d</span>Physics Interpolation - Fix `CPUParticles` to work with `SceneTreeFTI`</li>
+<li><span class="hash">65185415b2</span>Physics Interpolation - Reduce unnecessary `VisualServer` updates</li>
+<li><span class="hash">106eeb8e60</span>Merge pull request #104825 from lawnjelly/faster_cast_to</li>
+<li><span class="hash">be6f971f4f</span>Use the in-built casting instead of `dynamic_cast` on all platforms</li>
+<li><span class="hash">761339b001</span>Merge pull request #104823 from lawnjelly/simplified_casting_changes</li>
+<li><span class="hash">a39897953d</span>Make changes for simplified ObjectDB::get_instance() casting</li>
+<li><span class="hash">157f8805c2</span>Merge pull request #100603 from lawnjelly/get_instance_cast</li>
+<li><span class="hash">31935d6d63</span>Simplified `ObjectDB::get_instance()` casting</li>
+<li><span class="hash">5155fe5a4f</span>Merge pull request #103685 from lawnjelly/fti_scene_tree</li>
+<li><span class="hash">95a494c8e5</span>Merge pull request #100995 from lawnjelly/move_semantics</li>
+<li><span class="hash">585909ef69</span>Merge pull request #103763 from lawnjelly/global_get_fast</li>
+<li><span class="hash">0758ad0612</span>Add GLOBAL_GET cached macros.</li>
+<li><span class="hash">66a2efe491</span>Physics Interpolation - Move 3D FTI to `SceneTree`</li>
+<li><span class="hash">766b02c9cd</span>Merge pull request #103621 from YYF233333/noinline-err-print3.x</li>
+<li><span class="hash">2a2ae48d30</span>Prevent inlining error print functions.</li>
+<li><span class="hash">9ce78ca5c2</span>Merge pull request #102684 from axewizardbgg/doc-bitmappolygons</li>
+<li><span class="hash">f38ce8bdbe</span>Docs: BitMap: Added description for opaque_to_polygons method</li>
+<li><span class="hash">a4349590c5</span>Merge pull request #102184 from lawnjelly/fti_fix_client_ticking</li>
+<li><span class="hash">aa9ad67ac9</span>Merge pull request #101218 from lawnjelly/fti_auto_reset_mode_change</li>
+<li><span class="hash">5a50868b60</span>Merge pull request #100459 from lawnjelly/revert_range_set_value</li>
+<li><span class="hash">7e9be93338</span>Physics Interpolation - fix client interpolation pump</li>
+<li><span class="hash">56d8204470</span>Merge pull request #102023 from akien-mga/3.x-embree-fix-gcc15</li>
+<li><span class="hash">209579a2a6</span>embree: Fix invalid output operators raising errors with GCC 15</li>
+<li><span class="hash">7c824d1fa5</span>Physics Interpolation - Auto-reset on `set_physics_interpolation_mode()`</li>
+<li><span class="hash">d549b98c5c</span>Add move semantics to core containers.</li>
+<li><span class="hash">815484b595</span>Revert changes to Range::set_value #65101</li>
+<li><span class="hash">002d604651</span>Show TextureProgress radial cross only when editing the scene</li>
+<li><span class="hash">46dfd9747a</span>Improve set_radial_initial_angle by removing loops</li>
+<li><span class="hash">bea070235c</span>Cancel tooltips when mouse leaves window</li>
+<li><span class="hash">6879b1d29a</span>Fix double TOOLS_ENABLED checks from NO_EDITOR_SPLASH.</li>
+  </ul>
+</details>
+
+<div class="footer">
+  Generated from local git analysis of <code>5e904cd4..e1e12161</code> (upstream) and
+  <code>5e904cd4..6bd8e11f</code> (fork). Commit counts per category are approximate.
+</div>
+
+</div>
+</body>
+</html>

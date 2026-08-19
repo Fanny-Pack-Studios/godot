@@ -1,5 +1,5 @@
 //================================================================================================//
-// GodotSteam - register_types.cpp
+// GodotSteam - godotsteam_project_settings.cpp
 //================================================================================================//
 //
 // Copyright (c) 2015-Current | GP Garcia and Contributors
@@ -26,28 +26,20 @@
 //
 //================================================================================================//
 
-#include "register_types.h"
-
-#include "core/class_db.h"
-#include "core/engine.h"
-
-#include "godotsteam.h"
 #include "godotsteam_project_settings.h"
 
 
-static Steam* SteamPtr = nullptr;
-
-
-void register_godotsteam_types(){
-	ClassDB::register_class<Steam>();
-	SteamPtr = memnew(Steam);
-	Engine::get_singleton()->add_singleton(Engine::Singleton("Steam",Steam::get_singleton()));
-
-	// Setup Project Settings
-	SteamProjectSettings::register_settings();
+void SteamProjectSettings::register_settings() {
+	GLOBAL_DEF("steam/initialization/app_id", 0);
+	GLOBAL_DEF("steam/initialization/embed_callbacks", false);
 }
 
 
-void unregister_godotsteam_types(){
-	memdelete(SteamPtr);
+int SteamProjectSettings::get_app_id() {
+	return GLOBAL_GET("steam/initialization/app_id");
+}
+
+
+bool SteamProjectSettings::get_embed_callbacks() {
+	return GLOBAL_GET("steam/initialization/embed_callbacks");
 }
