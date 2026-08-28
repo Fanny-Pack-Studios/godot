@@ -223,6 +223,27 @@ bool Engine::is_shader_compilation_tracking_enabled() const {
 	return shader_compilation_tracking_enabled.is_set();
 }
 
+void Engine::set_shader_program_residency_enabled(bool p_enabled) {
+	shader_program_residency_enabled.set_to(p_enabled);
+}
+
+bool Engine::is_shader_program_residency_enabled() const {
+	return shader_program_residency_enabled.is_set();
+}
+
+uint32_t Engine::get_shader_resident_program_count() const {
+	return shader_resident_program_count.get();
+}
+
+void Engine::notify_shader_program_retained() {
+	shader_resident_program_count.increment();
+}
+
+void Engine::notify_shader_program_released() {
+	ERR_FAIL_COND(shader_resident_program_count.get() == 0);
+	shader_resident_program_count.decrement();
+}
+
 uint64_t Engine::record_shader_compilation_event(const ShaderCompilationEvent &p_event) {
 	if (!shader_compilation_tracking_enabled.is_set()) {
 		return 0;
@@ -385,6 +406,8 @@ Engine::Engine() {
 	editor_hint = false;
 	shader_compilation_tracking_enabled.clear();
 	shader_compilation_sequence.set(0);
+	shader_program_residency_enabled.clear();
+	shader_resident_program_count.set(0);
 	_portals_active = false;
 	_occlusion_culling_active = false;
 }
