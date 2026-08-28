@@ -3286,6 +3286,14 @@ void _Engine::clear_shader_compilation_events() {
 	Engine::get_singleton()->clear_shader_compilation_events();
 }
 
+void _Engine::set_shader_compilation_debug_targets(const PoolStringArray &p_targets) {
+	Engine::get_singleton()->set_shader_compilation_debug_targets(p_targets);
+}
+
+PoolStringArray _Engine::get_shader_compilation_debug_targets() const {
+	return Engine::get_singleton()->get_shader_compilation_debug_targets();
+}
+
 void _Engine::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_iterations_per_second", "iterations_per_second"), &_Engine::set_iterations_per_second);
 	ClassDB::bind_method(D_METHOD("get_iterations_per_second"), &_Engine::get_iterations_per_second);
@@ -3327,6 +3335,8 @@ void _Engine::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_shader_compilation_tracking_enabled"), &_Engine::is_shader_compilation_tracking_enabled);
 	ClassDB::bind_method(D_METHOD("drain_shader_compilation_events"), &_Engine::drain_shader_compilation_events);
 	ClassDB::bind_method(D_METHOD("clear_shader_compilation_events"), &_Engine::clear_shader_compilation_events);
+	ClassDB::bind_method(D_METHOD("set_shader_compilation_debug_targets", "targets"), &_Engine::set_shader_compilation_debug_targets);
+	ClassDB::bind_method(D_METHOD("get_shader_compilation_debug_targets"), &_Engine::get_shader_compilation_debug_targets);
 
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "editor_hint"), "set_editor_hint", "is_editor_hint");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "print_error_messages"), "set_print_error_messages", "is_printing_error_messages");

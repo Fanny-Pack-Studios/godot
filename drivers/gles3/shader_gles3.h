@@ -180,6 +180,18 @@ private:
 		uint64_t diagnostic_compilation_id;
 		uint64_t diagnostic_started_usec;
 		String diagnostic_material_path;
+		uint32_t diagnostic_custom_code_version;
+		String diagnostic_program_cache_key;
+		String diagnostic_vertex_source_hash;
+		String diagnostic_fragment_source_hash;
+		String diagnostic_vertex_source;
+		String diagnostic_fragment_source;
+		Vector<String> diagnostic_enabled_conditionals;
+		Vector<String> diagnostic_custom_defines;
+		bool diagnostic_debug_target;
+		bool diagnostic_cache_eligible;
+		bool diagnostic_cache_lookup_attempted;
+		bool diagnostic_cache_hit;
 		bool diagnostic_started;
 		bool diagnostic_finished;
 
@@ -225,6 +237,11 @@ private:
 				last_frame_processed(UINT64_MAX),
 				diagnostic_compilation_id(0),
 				diagnostic_started_usec(0),
+				diagnostic_custom_code_version(0),
+				diagnostic_debug_target(false),
+				diagnostic_cache_eligible(false),
+				diagnostic_cache_lookup_attempted(false),
+				diagnostic_cache_hit(false),
 				diagnostic_started(false),
 				diagnostic_finished(false),
 				compile_status(COMPILE_STATUS_PENDING),
@@ -384,6 +401,7 @@ private:
 	void _diagnostic_finish(Version *p_version, bool p_success);
 	String _diagnostic_compilation_mode() const;
 	String _diagnostic_source(const Version *p_version) const;
+	static String _join_shader_source(const LocalVector<const char *> &p_strings);
 
 protected:
 	_FORCE_INLINE_ int _get_uniform(int p_which) const;

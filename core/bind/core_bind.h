@@ -860,6 +860,8 @@ public:
 	bool is_shader_compilation_tracking_enabled() const;
 	Array drain_shader_compilation_events();
 	void clear_shader_compilation_events();
+	void set_shader_compilation_debug_targets(const PoolStringArray &p_targets);
+	PoolStringArray get_shader_compilation_debug_targets() const;
 
 	_Engine();
 };

@@ -258,6 +258,14 @@ String ShaderGLES3::_diagnostic_source(const Version *p_version) const {
 	return "unknown";
 }
 
+String ShaderGLES3::_join_shader_source(const LocalVector<const char *> &p_strings) {
+	String source;
+	for (uint32_t i = 0; i < p_strings.size(); i++) {
+		source += String::utf8(p_strings[i]);
+	}
+	return source;
+}
+
 void ShaderGLES3::_diagnostic_start(Version *p_version, const String &p_operation) {
 	Engine *engine = Engine::get_singleton();
 	if (p_version->diagnostic_started || !engine->is_shader_compilation_tracking_enabled()) {
@@ -271,6 +279,7 @@ void ShaderGLES3::_diagnostic_start(Version *p_version, const String &p_operatio
 	event.render_frame = current_frame;
 	event.variant = p_version->version_key.version;
 	event.custom_code_id = p_version->version_key.code_version;
+	event.custom_code_version = p_version->diagnostic_custom_code_version;
 	event.phase = "started";
 	event.operation = p_operation;
 	event.backend = "gles3";
@@ -278,9 +287,22 @@ void ShaderGLES3::_diagnostic_start(Version *p_version, const String &p_operatio
 	event.source = _diagnostic_source(p_version);
 	event.shader_name = get_shader_name();
 	event.material_path = p_version->diagnostic_material_path;
+	event.debug_target = p_version->diagnostic_debug_target;
+	event.cache_eligible = p_version->diagnostic_cache_eligible;
+	event.cache_lookup_attempted = p_version->diagnostic_cache_lookup_attempted;
+	event.cache_hit = p_version->diagnostic_cache_hit;
+	event.program_cache_key = p_version->diagnostic_program_cache_key;
+	event.vertex_source_hash = p_version->diagnostic_vertex_source_hash;
+	event.fragment_source_hash = p_version->diagnostic_fragment_source_hash;
+	event.enabled_conditionals = p_version->diagnostic_enabled_conditionals;
+	event.custom_defines = p_version->diagnostic_custom_defines;
+	event.generated_vertex_source = p_version->diagnostic_vertex_source;
+	event.generated_fragment_source = p_version->diagnostic_fragment_source;
 	event.success = true;
 	p_version->diagnostic_compilation_id = engine->record_shader_compilation_event(event);
 	p_version->diagnostic_started = p_version->diagnostic_compilation_id != 0;
+	p_version->diagnostic_vertex_source = String();
+	p_version->diagnostic_fragment_source = String();
 }
 
 void ShaderGLES3::_diagnostic_finish(Version *p_version, bool p_success) {
@@ -302,6 +324,7 @@ void ShaderGLES3::_diagnostic_finish(Version *p_version, bool p_success) {
 	event.render_frame = current_frame;
 	event.variant = p_version->version_key.version;
 	event.custom_code_id = p_version->version_key.code_version;
+	event.custom_code_version = p_version->diagnostic_custom_code_version;
 	event.phase = "finished";
 	event.operation = p_version->program_binary.source == Version::ProgramBinary::SOURCE_CACHE ? "program_binary_load" : "compile";
 	event.backend = "gles3";
@@ -309,6 +332,15 @@ void ShaderGLES3::_diagnostic_finish(Version *p_version, bool p_success) {
 	event.source = _diagnostic_source(p_version);
 	event.shader_name = get_shader_name();
 	event.material_path = p_version->diagnostic_material_path;
+	event.debug_target = p_version->diagnostic_debug_target;
+	event.cache_eligible = p_version->diagnostic_cache_eligible;
+	event.cache_lookup_attempted = p_version->diagnostic_cache_lookup_attempted;
+	event.cache_hit = p_version->diagnostic_cache_hit;
+	event.program_cache_key = p_version->diagnostic_program_cache_key;
+	event.vertex_source_hash = p_version->diagnostic_vertex_source_hash;
+	event.fragment_source_hash = p_version->diagnostic_fragment_source_hash;
+	event.enabled_conditionals = p_version->diagnostic_enabled_conditionals;
+	event.custom_defines = p_version->diagnostic_custom_defines;
 	event.success = p_success;
 	engine->record_shader_compilation_event(event);
 }
@@ -654,6 +686,18 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	v.diagnostic_compilation_id = 0;
 	v.diagnostic_started_usec = 0;
 	v.diagnostic_material_path = diagnostic_material_path;
+	v.diagnostic_custom_code_version = 0;
+	v.diagnostic_program_cache_key = String();
+	v.diagnostic_vertex_source_hash = String();
+	v.diagnostic_fragment_source_hash = String();
+	v.diagnostic_vertex_source = String();
+	v.diagnostic_fragment_source = String();
+	v.diagnostic_enabled_conditionals.clear();
+	v.diagnostic_custom_defines.clear();
+	v.diagnostic_debug_target = Engine::get_singleton()->is_shader_compilation_debug_target(diagnostic_material_path);
+	v.diagnostic_cache_eligible = effective_version.is_subject_to_caching();
+	v.diagnostic_cache_lookup_attempted = false;
+	v.diagnostic_cache_hit = false;
 	v.diagnostic_started = false;
 	v.diagnostic_finished = false;
 
@@ -674,6 +718,9 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	for (int i = 0; i < custom_defines.size(); i++) {
 		strings_common.push_back(custom_defines[i].get_data());
 		strings_common.push_back("\n");
+		if (v.diagnostic_debug_target) {
+			v.diagnostic_custom_defines.push_back(String(custom_defines[i]).strip_edges());
+		}
 	}
 
 	if (is_async_compilation_supported() && get_ubershader_flags_uniform() != -1) {
@@ -685,6 +732,9 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	bool build_ubershader = get_ubershader_flags_uniform() != -1 && (effective_version.version & VersionKey::UBERSHADER_FLAG);
 	if (build_ubershader) {
 		strings_common.push_back("#define IS_UBERSHADER\n");
+		if (v.diagnostic_debug_target) {
+			v.diagnostic_enabled_conditionals.push_back("IS_UBERSHADER");
+		}
 		for (int i = 0; i < conditional_count; i++) {
 			String s = vformat("#define FLAG_%s (1 << %d)\n", String(conditional_defines[i]).strip_edges().trim_prefix("#define "), i);
 			CharString cs = s.ascii();
@@ -696,6 +746,9 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 		for (int i = 0; i < conditional_count; i++) {
 			bool enable = ((1 << i) & effective_version.version);
 			strings_common.push_back(enable ? conditional_defines[i] : "");
+			if (enable && v.diagnostic_debug_target) {
+				v.diagnostic_enabled_conditionals.push_back(String(conditional_defines[i]).strip_edges().trim_prefix("#define ").strip_edges());
+			}
 
 			if (enable) {
 				DEBUG_PRINT(conditional_defines[i]);
@@ -727,6 +780,7 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 			v.uniforms_ready = false;
 		}
 	}
+	v.diagnostic_custom_code_version = v.code_version;
 
 	/* CREATE PROGRAM */
 
@@ -743,6 +797,9 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	if (cc) {
 		for (int i = 0; i < cc->custom_defines.size(); i++) {
 			strings_common.push_back(cc->custom_defines[i].get_data());
+			if (v.diagnostic_debug_target) {
+				v.diagnostic_custom_defines.push_back(String(cc->custom_defines[i]).strip_edges());
+			}
 			DEBUG_PRINT("CD #" + itos(i) + ": " + String(cc->custom_defines[i]));
 		}
 	}
@@ -899,17 +956,31 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 				(v.async_mode == ASYNC_MODE_VISIBLE && get_ubershader_flags_uniform() == -1);
 	}
 
-	bool in_cache = false;
-	if (shader_cache && effective_version.is_subject_to_caching()) {
-		const char *strings_platform[] = {
-			reinterpret_cast<const char *>(glGetString(GL_VENDOR)),
-			reinterpret_cast<const char *>(glGetString(GL_RENDERER)),
-			reinterpret_cast<const char *>(glGetString(GL_VERSION)),
-			nullptr,
-		};
+	const char *strings_platform[] = {
+		reinterpret_cast<const char *>(glGetString(GL_VENDOR)),
+		reinterpret_cast<const char *>(glGetString(GL_RENDERER)),
+		reinterpret_cast<const char *>(glGetString(GL_VERSION)),
+		nullptr,
+	};
+	if (v.diagnostic_cache_eligible || v.diagnostic_debug_target) {
 		v.program_binary.cache_hash = ShaderCacheGLES3::hash_program(strings_platform, strings_vertex, strings_fragment);
+		v.diagnostic_program_cache_key = v.program_binary.cache_hash;
+	}
+	if (v.diagnostic_debug_target) {
+		const char *no_platform_strings[] = { nullptr };
+		LocalVector<const char *> no_shader_strings;
+		v.diagnostic_vertex_source_hash = ShaderCacheGLES3::hash_program(no_platform_strings, strings_vertex, no_shader_strings);
+		v.diagnostic_fragment_source_hash = ShaderCacheGLES3::hash_program(no_platform_strings, no_shader_strings, strings_fragment);
+		v.diagnostic_vertex_source = _join_shader_source(strings_vertex);
+		v.diagnostic_fragment_source = _join_shader_source(strings_fragment);
+	}
+
+	bool in_cache = false;
+	if (shader_cache && v.diagnostic_cache_eligible) {
+		v.diagnostic_cache_lookup_attempted = true;
 		if (shader_cache->retrieve(v.program_binary.cache_hash, &v.program_binary.format, &v.program_binary.data)) {
 			in_cache = true;
+			v.diagnostic_cache_hit = true;
 			v.program_binary.source = Version::ProgramBinary::SOURCE_CACHE;
 			v.compile_status = Version::COMPILE_STATUS_BINARY_READY_FROM_CACHE;
 		}

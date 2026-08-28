@@ -45,6 +45,11 @@ Engine::ShaderCompilationEvent::ShaderCompilationEvent() {
 	render_frame = 0;
 	variant = 0;
 	custom_code_id = 0;
+	custom_code_version = 0;
+	debug_target = false;
+	cache_eligible = false;
+	cache_lookup_attempted = false;
+	cache_hit = false;
 	success = true;
 }
 
@@ -249,6 +254,7 @@ Array Engine::drain_shader_compilation_events() {
 		item["render_frame"] = event.render_frame;
 		item["variant"] = event.variant;
 		item["custom_code_id"] = event.custom_code_id;
+		item["custom_code_version"] = event.custom_code_version;
 		item["phase"] = event.phase;
 		item["operation"] = event.operation;
 		item["backend"] = event.backend;
@@ -256,6 +262,29 @@ Array Engine::drain_shader_compilation_events() {
 		item["source"] = event.source;
 		item["shader_name"] = event.shader_name;
 		item["material_path"] = event.material_path;
+		item["debug_target"] = event.debug_target;
+		item["cache_eligible"] = event.cache_eligible;
+		item["cache_lookup_attempted"] = event.cache_lookup_attempted;
+		item["cache_hit"] = event.cache_hit;
+		item["program_cache_key"] = event.program_cache_key;
+		item["vertex_source_hash"] = event.vertex_source_hash;
+		item["fragment_source_hash"] = event.fragment_source_hash;
+		Array enabled_conditionals;
+		for (int j = 0; j < event.enabled_conditionals.size(); j++) {
+			enabled_conditionals.push_back(event.enabled_conditionals[j]);
+		}
+		item["enabled_conditionals"] = enabled_conditionals;
+		Array custom_defines;
+		for (int j = 0; j < event.custom_defines.size(); j++) {
+			custom_defines.push_back(event.custom_defines[j]);
+		}
+		item["custom_defines"] = custom_defines;
+		if (!event.generated_vertex_source.empty()) {
+			item["generated_vertex_source"] = event.generated_vertex_source;
+		}
+		if (!event.generated_fragment_source.empty()) {
+			item["generated_fragment_source"] = event.generated_fragment_source;
+		}
 		item["success"] = event.success;
 		result[i] = item;
 	}
@@ -266,6 +295,46 @@ Array Engine::drain_shader_compilation_events() {
 void Engine::clear_shader_compilation_events() {
 	MutexLock lock(shader_compilation_events_mutex);
 	shader_compilation_events.clear();
+}
+
+void Engine::set_shader_compilation_debug_targets(const PoolStringArray &p_targets) {
+	Vector<String> normalized_targets;
+	PoolStringArray::Read targets = p_targets.read();
+	for (int i = 0; i < p_targets.size(); i++) {
+		String target = targets[i].strip_edges().replace("\\", "/");
+		if (!target.empty() && normalized_targets.find(target) == -1) {
+			normalized_targets.push_back(target);
+		}
+	}
+
+	MutexLock lock(shader_compilation_debug_targets_mutex);
+	shader_compilation_debug_targets = normalized_targets;
+}
+
+PoolStringArray Engine::get_shader_compilation_debug_targets() const {
+	PoolStringArray result;
+	MutexLock lock(shader_compilation_debug_targets_mutex);
+	for (int i = 0; i < shader_compilation_debug_targets.size(); i++) {
+		result.push_back(shader_compilation_debug_targets[i]);
+	}
+	return result;
+}
+
+bool Engine::is_shader_compilation_debug_target(const String &p_material_path) const {
+	String material_path = p_material_path.replace("\\", "/");
+	String material_file = material_path.get_file().get_slice("::", 0);
+
+	MutexLock lock(shader_compilation_debug_targets_mutex);
+	for (int i = 0; i < shader_compilation_debug_targets.size(); i++) {
+		const String &target = shader_compilation_debug_targets[i];
+		if (material_path == target || material_path.begins_with(target + "::")) {
+			return true;
+		}
+		if (target.find("/") == -1 && material_file == target) {
+			return true;
+		}
+	}
+	return false;
 }
 
 void Engine::add_singleton(const Singleton &p_singleton) {

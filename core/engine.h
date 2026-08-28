@@ -48,6 +48,7 @@ public:
 		uint64_t render_frame;
 		uint64_t variant;
 		uint32_t custom_code_id;
+		uint32_t custom_code_version;
 		String phase;
 		String operation;
 		String backend;
@@ -55,6 +56,17 @@ public:
 		String source;
 		String shader_name;
 		String material_path;
+		String program_cache_key;
+		String vertex_source_hash;
+		String fragment_source_hash;
+		String generated_vertex_source;
+		String generated_fragment_source;
+		Vector<String> enabled_conditionals;
+		Vector<String> custom_defines;
+		bool debug_target;
+		bool cache_eligible;
+		bool cache_lookup_attempted;
+		bool cache_hit;
 		bool success;
 
 		ShaderCompilationEvent();
@@ -97,6 +109,8 @@ private:
 	SafeNumeric<uint64_t> shader_compilation_sequence;
 	Mutex shader_compilation_events_mutex;
 	Vector<ShaderCompilationEvent> shader_compilation_events;
+	mutable Mutex shader_compilation_debug_targets_mutex;
+	Vector<String> shader_compilation_debug_targets;
 
 	static Engine *singleton;
 
@@ -137,6 +151,9 @@ public:
 	uint64_t record_shader_compilation_event(const ShaderCompilationEvent &p_event);
 	Array drain_shader_compilation_events();
 	void clear_shader_compilation_events();
+	void set_shader_compilation_debug_targets(const PoolStringArray &p_targets);
+	PoolStringArray get_shader_compilation_debug_targets() const;
+	bool is_shader_compilation_debug_target(const String &p_material_path) const;
 
 	void add_singleton(const Singleton &p_singleton);
 	void get_singletons(List<Singleton> *p_singletons);
