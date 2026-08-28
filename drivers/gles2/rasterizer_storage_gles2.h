@@ -560,6 +560,7 @@ public:
 
 	struct Material : public RID_Data {
 		Shader *shader;
+		String path;
 		Map<StringName, Variant> params;
 		SelfList<Material> list;
 		SelfList<Material> dirty_list;
@@ -602,6 +603,7 @@ public:
 
 	virtual RID material_create();
 
+	virtual void material_set_path(RID p_material, const String &p_path);
 	virtual void material_set_shader(RID p_material, RID p_shader);
 	virtual RID material_get_shader(RID p_material) const;
 

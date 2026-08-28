@@ -2566,6 +2566,12 @@ RID RasterizerStorageGLES3::material_create() {
 	return material_owner.make_rid(material);
 }
 
+void RasterizerStorageGLES3::material_set_path(RID p_material, const String &p_path) {
+	Material *material = material_owner.get(p_material);
+	ERR_FAIL_COND(!material);
+	material->path = p_path;
+}
+
 void RasterizerStorageGLES3::material_set_shader(RID p_material, RID p_shader) {
 	Material *material = material_owner.get(p_material);
 	ERR_FAIL_COND(!material);
@@ -6663,7 +6669,7 @@ void RasterizerStorageGLES3::update_particles() {
 		if (!material || !material->shader || material->shader->mode != VS::SHADER_PARTICLES) {
 			shaders.particles.set_custom_shader(0);
 		} else {
-			shaders.particles.set_custom_shader(material->shader->custom_code_id);
+			shaders.particles.set_custom_shader(material->shader->custom_code_id, material->path);
 
 			if (material->ubo_id) {
 				glBindBufferBase(GL_UNIFORM_BUFFER, 0, material->ubo_id);

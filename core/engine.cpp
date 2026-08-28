@@ -35,6 +35,19 @@
 #include "core/license.gen.h"
 #include "core/version.h"
 
+static const int MAX_QUEUED_SHADER_COMPILATION_EVENTS = 4096;
+
+Engine::ShaderCompilationEvent::ShaderCompilationEvent() {
+	compilation_id = 0;
+	timestamp_usec = 0;
+	duration_usec = 0;
+	idle_frame = 0;
+	render_frame = 0;
+	variant = 0;
+	custom_code_id = 0;
+	success = true;
+}
+
 void Engine::set_iterations_per_second(int p_ips) {
 	ERR_FAIL_COND_MSG(p_ips <= 0, "Engine iterations per second must be greater than 0.");
 	ips = p_ips;
@@ -191,6 +204,70 @@ bool Engine::is_printing_error_messages() const {
 	return _print_error_enabled;
 }
 
+void Engine::set_shader_compilation_tracking_enabled(bool p_enabled) {
+	if (shader_compilation_tracking_enabled.is_set() == p_enabled) {
+		return;
+	}
+
+	shader_compilation_tracking_enabled.set_to(p_enabled);
+	clear_shader_compilation_events();
+}
+
+bool Engine::is_shader_compilation_tracking_enabled() const {
+	return shader_compilation_tracking_enabled.is_set();
+}
+
+uint64_t Engine::record_shader_compilation_event(const ShaderCompilationEvent &p_event) {
+	if (!shader_compilation_tracking_enabled.is_set()) {
+		return 0;
+	}
+
+	ShaderCompilationEvent event = p_event;
+	if (event.compilation_id == 0) {
+		event.compilation_id = shader_compilation_sequence.increment();
+	}
+
+	MutexLock lock(shader_compilation_events_mutex);
+	if (shader_compilation_events.size() >= MAX_QUEUED_SHADER_COMPILATION_EVENTS) {
+		shader_compilation_events.remove(0);
+	}
+	shader_compilation_events.push_back(event);
+	return event.compilation_id;
+}
+
+Array Engine::drain_shader_compilation_events() {
+	Array result;
+	MutexLock lock(shader_compilation_events_mutex);
+	result.resize(shader_compilation_events.size());
+	for (int i = 0; i < shader_compilation_events.size(); i++) {
+		const ShaderCompilationEvent &event = shader_compilation_events[i];
+		Dictionary item;
+		item["compilation_id"] = event.compilation_id;
+		item["timestamp_usec"] = event.timestamp_usec;
+		item["duration_usec"] = event.duration_usec;
+		item["idle_frame"] = event.idle_frame;
+		item["render_frame"] = event.render_frame;
+		item["variant"] = event.variant;
+		item["custom_code_id"] = event.custom_code_id;
+		item["phase"] = event.phase;
+		item["operation"] = event.operation;
+		item["backend"] = event.backend;
+		item["compilation_mode"] = event.compilation_mode;
+		item["source"] = event.source;
+		item["shader_name"] = event.shader_name;
+		item["material_path"] = event.material_path;
+		item["success"] = event.success;
+		result[i] = item;
+	}
+	shader_compilation_events.clear();
+	return result;
+}
+
+void Engine::clear_shader_compilation_events() {
+	MutexLock lock(shader_compilation_events_mutex);
+	shader_compilation_events.clear();
+}
+
 void Engine::add_singleton(const Singleton &p_singleton) {
 	singletons.push_back(p_singleton);
 	singleton_ptrs[p_singleton.name] = p_singleton.ptr;
@@ -235,6 +312,8 @@ Engine::Engine() {
 	_frame_ticks = 0;
 	_frame_step = 0;
 	editor_hint = false;
+	shader_compilation_tracking_enabled.clear();
+	shader_compilation_sequence.set(0);
 	_portals_active = false;
 	_occlusion_culling_active = false;
 }

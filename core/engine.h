@@ -33,11 +33,33 @@
 
 #include "core/list.h"
 #include "core/os/main_loop.h"
+#include "core/os/mutex.h"
+#include "core/safe_refcount.h"
 #include "core/ustring.h"
 #include "core/vector.h"
 
 class Engine {
 public:
+	struct ShaderCompilationEvent {
+		uint64_t compilation_id;
+		uint64_t timestamp_usec;
+		uint64_t duration_usec;
+		uint64_t idle_frame;
+		uint64_t render_frame;
+		uint64_t variant;
+		uint32_t custom_code_id;
+		String phase;
+		String operation;
+		String backend;
+		String compilation_mode;
+		String source;
+		String shader_name;
+		String material_path;
+		bool success;
+
+		ShaderCompilationEvent();
+	};
+
 	struct Singleton {
 		StringName name;
 		Object *ptr;
@@ -70,6 +92,11 @@ private:
 	Map<StringName, Object *> singleton_ptrs;
 
 	bool editor_hint;
+
+	SafeFlag shader_compilation_tracking_enabled;
+	SafeNumeric<uint64_t> shader_compilation_sequence;
+	Mutex shader_compilation_events_mutex;
+	Vector<ShaderCompilationEvent> shader_compilation_events;
 
 	static Engine *singleton;
 
@@ -104,6 +131,12 @@ public:
 
 	void set_print_error_messages(bool p_enabled);
 	bool is_printing_error_messages() const;
+
+	void set_shader_compilation_tracking_enabled(bool p_enabled);
+	bool is_shader_compilation_tracking_enabled() const;
+	uint64_t record_shader_compilation_event(const ShaderCompilationEvent &p_event);
+	Array drain_shader_compilation_events();
+	void clear_shader_compilation_events();
 
 	void add_singleton(const Singleton &p_singleton);
 	void get_singletons(List<Singleton> *p_singletons);

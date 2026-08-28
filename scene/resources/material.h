@@ -50,6 +50,7 @@ class Material : public Resource {
 protected:
 	_FORCE_INLINE_ RID _get_material() const { return material; }
 	static void _bind_methods();
+	virtual void _resource_path_changed();
 	virtual bool _can_do_next_pass() const { return false; }
 
 	void _validate_property(PropertyInfo &property) const;

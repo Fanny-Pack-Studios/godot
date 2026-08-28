@@ -177,6 +177,11 @@ private:
 		Vector<GLint> texture_uniform_locations;
 		bool uniforms_ready;
 		uint64_t last_frame_processed;
+		uint64_t diagnostic_compilation_id;
+		uint64_t diagnostic_started_usec;
+		String diagnostic_material_path;
+		bool diagnostic_started;
+		bool diagnostic_finished;
 
 		enum CompileStatus {
 			COMPILE_STATUS_PENDING,
@@ -218,6 +223,10 @@ private:
 				uniform_location(nullptr),
 				uniforms_ready(false),
 				last_frame_processed(UINT64_MAX),
+				diagnostic_compilation_id(0),
+				diagnostic_started_usec(0),
+				diagnostic_started(false),
+				diagnostic_finished(false),
 				compile_status(COMPILE_STATUS_PENDING),
 				compiling_list(this),
 				program_binary() {}
@@ -235,6 +244,7 @@ private:
 
 	HashMap<uint32_t, CustomCode> custom_code_map;
 	uint32_t last_custom_code;
+	String diagnostic_material_path;
 
 	VersionKey conditional_version;
 	VersionKey new_conditional_version;
@@ -370,6 +380,10 @@ private:
 
 	bool _bind(bool p_binding_fallback);
 	bool _bind_ubershader(bool p_for_warmrup = false);
+	void _diagnostic_start(Version *p_version, const String &p_operation);
+	void _diagnostic_finish(Version *p_version, bool p_success);
+	String _diagnostic_compilation_mode() const;
+	String _diagnostic_source(const Version *p_version) const;
 
 protected:
 	_FORCE_INLINE_ int _get_uniform(int p_which) const;
@@ -395,7 +409,7 @@ public:
 
 	uint32_t create_custom_shader();
 	void set_custom_shader_code(uint32_t p_code_id, const String &p_vertex, const String &p_vertex_globals, const String &p_fragment, const String &p_light, const String &p_fragment_globals, const String &p_uniforms, const Vector<StringName> &p_texture_uniforms, const Vector<CharString> &p_custom_defines, AsyncMode p_async_mode);
-	void set_custom_shader(uint32_t p_code_id);
+	void set_custom_shader(uint32_t p_code_id, const String &p_material_path = String());
 	void free_custom_shader(uint32_t p_code_id);
 	bool is_custom_code_ready_for_render(uint32_t p_code_id);
 

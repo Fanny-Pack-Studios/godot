@@ -575,6 +575,7 @@ public:
 
 	struct Material : public RID_Data {
 		Shader *shader;
+		String path;
 		GLuint ubo_id;
 		uint32_t ubo_size;
 		Map<StringName, Variant> params;
@@ -619,6 +620,7 @@ public:
 
 	virtual RID material_create();
 
+	virtual void material_set_path(RID p_material, const String &p_path);
 	virtual void material_set_shader(RID p_material, RID p_shader);
 	virtual RID material_get_shader(RID p_material) const;
 

@@ -856,6 +856,11 @@ public:
 	void set_print_error_messages(bool p_enabled);
 	bool is_printing_error_messages() const;
 
+	void set_shader_compilation_tracking_enabled(bool p_enabled);
+	bool is_shader_compilation_tracking_enabled() const;
+	Array drain_shader_compilation_events();
+	void clear_shader_compilation_events();
+
 	_Engine();
 };
 

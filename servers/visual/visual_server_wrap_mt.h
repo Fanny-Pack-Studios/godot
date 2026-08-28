@@ -138,6 +138,7 @@ public:
 
 	FUNCRID(material)
 
+	FUNC2(material_set_path, RID, const String &)
 	FUNC2(material_set_shader, RID, RID)
 	FUNC1RC(RID, material_get_shader, RID)
 

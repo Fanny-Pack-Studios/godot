@@ -75,6 +75,11 @@ int Material::get_render_priority() const {
 RID Material::get_rid() const {
 	return material;
 }
+
+void Material::_resource_path_changed() {
+	VS::get_singleton()->material_set_path(material, get_path());
+}
+
 void Material::_validate_property(PropertyInfo &property) const {
 	if (!_can_do_next_pass() && property.name == "next_pass") {
 		property.usage = 0;

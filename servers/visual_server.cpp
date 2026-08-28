@@ -1910,6 +1910,7 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_shader_async_hidden_forbidden", "forbidden"), &VisualServer::set_shader_async_hidden_forbidden);
 
 	ClassDB::bind_method(D_METHOD("material_create"), &VisualServer::material_create);
+	ClassDB::bind_method(D_METHOD("material_set_path", "material", "path"), &VisualServer::material_set_path);
 	ClassDB::bind_method(D_METHOD("material_set_shader", "shader_material", "shader"), &VisualServer::material_set_shader);
 	ClassDB::bind_method(D_METHOD("material_get_shader", "shader_material"), &VisualServer::material_get_shader);
 	ClassDB::bind_method(D_METHOD("material_set_param", "material", "parameter", "value"), &VisualServer::material_set_param);

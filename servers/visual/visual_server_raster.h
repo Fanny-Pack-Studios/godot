@@ -212,6 +212,7 @@ public:
 
 	BIND0R(RID, material_create)
 
+	BIND2(material_set_path, RID, const String &)
 	BIND2(material_set_shader, RID, RID)
 	BIND1RC(RID, material_get_shader, RID)
 

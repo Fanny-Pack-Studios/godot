@@ -173,7 +173,7 @@ void RasterizerCanvasGLES3::_legacy_canvas_render_item(Item *p_ci, RenderItemSta
 					VisualServerRaster::redraw_request(false);
 				}
 
-				state.canvas_shader.set_custom_shader(shader_ptr->custom_code_id);
+				state.canvas_shader.set_custom_shader(shader_ptr->custom_code_id, material_ptr->path);
 				state.canvas_shader.bind();
 			}
 
@@ -1260,7 +1260,7 @@ void RasterizerCanvasGLES3::render_joined_item(const BItemJoined &p_bij, RenderI
 					VisualServerRaster::redraw_request(false);
 				}
 
-				state.canvas_shader.set_custom_shader(shader_ptr->custom_code_id);
+				state.canvas_shader.set_custom_shader(shader_ptr->custom_code_id, material_ptr->path);
 				state.canvas_shader.bind();
 			}
 

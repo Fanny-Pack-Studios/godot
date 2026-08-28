@@ -30,6 +30,7 @@
 
 #include "shader_gles3.h"
 
+#include "core/engine.h"
 #include "core/local_vector.h"
 #include "core/os/os.h"
 #include "core/print_string.h"
@@ -233,6 +234,85 @@ void ShaderGLES3::_log_active_compiles() {
 #endif
 }
 
+String ShaderGLES3::_diagnostic_compilation_mode() const {
+	if (compile_queue) {
+		return "secondary_context_queue";
+	}
+	if (parallel_compile_supported) {
+		return "parallel_compile";
+	}
+	return "synchronous";
+}
+
+String ShaderGLES3::_diagnostic_source(const Version *p_version) const {
+	switch (p_version->program_binary.source) {
+		case Version::ProgramBinary::SOURCE_LOCAL:
+			return "source";
+		case Version::ProgramBinary::SOURCE_QUEUE:
+			return "compile_queue";
+		case Version::ProgramBinary::SOURCE_CACHE:
+			return "program_binary_cache";
+		case Version::ProgramBinary::SOURCE_NONE:
+			return "unknown";
+	}
+	return "unknown";
+}
+
+void ShaderGLES3::_diagnostic_start(Version *p_version, const String &p_operation) {
+	Engine *engine = Engine::get_singleton();
+	if (p_version->diagnostic_started || !engine->is_shader_compilation_tracking_enabled()) {
+		return;
+	}
+
+	p_version->diagnostic_started_usec = OS::get_singleton()->get_ticks_usec();
+	Engine::ShaderCompilationEvent event;
+	event.timestamp_usec = p_version->diagnostic_started_usec;
+	event.idle_frame = engine->get_idle_frames();
+	event.render_frame = current_frame;
+	event.variant = p_version->version_key.version;
+	event.custom_code_id = p_version->version_key.code_version;
+	event.phase = "started";
+	event.operation = p_operation;
+	event.backend = "gles3";
+	event.compilation_mode = _diagnostic_compilation_mode();
+	event.source = _diagnostic_source(p_version);
+	event.shader_name = get_shader_name();
+	event.material_path = p_version->diagnostic_material_path;
+	event.success = true;
+	p_version->diagnostic_compilation_id = engine->record_shader_compilation_event(event);
+	p_version->diagnostic_started = p_version->diagnostic_compilation_id != 0;
+}
+
+void ShaderGLES3::_diagnostic_finish(Version *p_version, bool p_success) {
+	if (!p_version->diagnostic_started || p_version->diagnostic_finished) {
+		return;
+	}
+	p_version->diagnostic_finished = true;
+
+	Engine *engine = Engine::get_singleton();
+	if (!engine->is_shader_compilation_tracking_enabled()) {
+		return;
+	}
+
+	Engine::ShaderCompilationEvent event;
+	event.compilation_id = p_version->diagnostic_compilation_id;
+	event.timestamp_usec = OS::get_singleton()->get_ticks_usec();
+	event.duration_usec = event.timestamp_usec - p_version->diagnostic_started_usec;
+	event.idle_frame = engine->get_idle_frames();
+	event.render_frame = current_frame;
+	event.variant = p_version->version_key.version;
+	event.custom_code_id = p_version->version_key.code_version;
+	event.phase = "finished";
+	event.operation = p_version->program_binary.source == Version::ProgramBinary::SOURCE_CACHE ? "program_binary_load" : "compile";
+	event.backend = "gles3";
+	event.compilation_mode = _diagnostic_compilation_mode();
+	event.source = _diagnostic_source(p_version);
+	event.shader_name = get_shader_name();
+	event.material_path = p_version->diagnostic_material_path;
+	event.success = p_success;
+	engine->record_shader_compilation_event(event);
+}
+
 bool ShaderGLES3::_process_program_state(Version *p_version, bool p_async_forbidden) {
 	bool ready = false;
 	bool run_next_step = true;
@@ -251,6 +331,7 @@ bool ShaderGLES3::_process_program_state(Version *p_version, bool p_async_forbid
 				// These lead to nowhere unless other piece of code starts the compile process
 			} break;
 			case Version::COMPILE_STATUS_SOURCE_PROVIDED: {
+				p_version->shader->_diagnostic_start(p_version, "compile");
 				uint32_t start_compiles_count = p_async_forbidden ? 2 : 0;
 				if (!start_compiles_count) {
 					uint32_t used_async_slots = MAX(active_compiles_count, *compiles_started_this_frame);
@@ -337,6 +418,7 @@ bool ShaderGLES3::_process_program_state(Version *p_version, bool p_async_forbid
 						run_next_step = p_async_forbidden;
 					} else {
 						p_version->compile_status = Version::COMPILE_STATUS_ERROR;
+						p_version->shader->_diagnostic_finish(p_version, false);
 						if (p_version->compiling_list.in_list()) {
 							p_version->compiling_list.remove_from_list();
 							active_compiles_count--;
@@ -353,6 +435,7 @@ bool ShaderGLES3::_process_program_state(Version *p_version, bool p_async_forbid
 				switch (p_version->program_binary.result_from_queue.get()) {
 					case -1: { // Error
 						p_version->compile_status = Version::COMPILE_STATUS_ERROR;
+						p_version->shader->_diagnostic_finish(p_version, false);
 						p_version->compiling_list.remove_from_list();
 						active_compiles_count--;
 #ifdef DEV_ENABLED
@@ -392,6 +475,9 @@ bool ShaderGLES3::_process_program_state(Version *p_version, bool p_async_forbid
 				}
 			} break;
 			case Version::COMPILE_STATUS_BINARY_READY: {
+				if (p_version->program_binary.source == Version::ProgramBinary::SOURCE_CACHE) {
+					p_version->shader->_diagnostic_start(p_version, "program_binary_load");
+				}
 				PoolByteArray::Read r = p_version->program_binary.data.read();
 				glProgramBinary(p_version->ids.main, static_cast<GLenum>(p_version->program_binary.format), r.ptr(), p_version->program_binary.data.size());
 				p_version->compile_status = Version::COMPILE_STATUS_LINKING;
@@ -430,8 +516,10 @@ bool ShaderGLES3::_process_program_state(Version *p_version, bool p_async_forbid
 							});
 						}
 						p_version->compile_status = Version::COMPILE_STATUS_OK;
+						p_version->shader->_diagnostic_finish(p_version, true);
 						ready = true;
 					} else {
+						p_version->shader->_diagnostic_finish(p_version, false);
 						if (p_version->program_binary.source == Version::ProgramBinary::SOURCE_CACHE) {
 #ifdef DEBUG_ENABLED
 							WARN_PRINT("Program binary from cache has been rejected by the GL. Removing from cache.");
@@ -563,6 +651,11 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	}
 
 	Version &v = *_v;
+	v.diagnostic_compilation_id = 0;
+	v.diagnostic_started_usec = 0;
+	v.diagnostic_material_path = diagnostic_material_path;
+	v.diagnostic_started = false;
+	v.diagnostic_finished = false;
 
 	/* SETUP CONDITIONALS */
 
@@ -849,6 +942,7 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 
 			v.program_binary.source = Version::ProgramBinary::SOURCE_QUEUE;
 			v.compile_status = Version::COMPILE_STATUS_PROCESSING_AT_QUEUE;
+			_diagnostic_start(&v, "compile");
 			versions_compiling.add_last(&v.compiling_list);
 			active_compiles_count++;
 			*max_frame_compiles_in_progress = MAX(*max_frame_compiles_in_progress, active_compiles_count);
@@ -1087,6 +1181,7 @@ void ShaderGLES3::_setup_uniforms(CustomCode *p_cc) const {
 }
 
 void ShaderGLES3::_dispose_program(Version *p_version) {
+	_diagnostic_finish(p_version, false);
 	if (compile_queue) {
 		if (p_version->compile_status == Version::COMPILE_STATUS_PROCESSING_AT_QUEUE) {
 			compile_queue->cancel(p_version->ids.main);
@@ -1284,13 +1379,15 @@ void ShaderGLES3::set_custom_shader_code(uint32_t p_code_id, const String &p_ver
 
 	if (p_async_mode == ASYNC_MODE_VISIBLE && is_async_compilation_supported() && get_ubershader_flags_uniform() != -1) {
 		// Warm up the ubershader for this custom code
+		diagnostic_material_path = String();
 		new_conditional_version.code_version = p_code_id;
 		_bind_ubershader(true);
 	}
 }
 
-void ShaderGLES3::set_custom_shader(uint32_t p_code_id) {
+void ShaderGLES3::set_custom_shader(uint32_t p_code_id, const String &p_material_path) {
 	new_conditional_version.code_version = p_code_id;
+	diagnostic_material_path = p_material_path;
 }
 
 void ShaderGLES3::free_custom_shader(uint32_t p_code_id) {

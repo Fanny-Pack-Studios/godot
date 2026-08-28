@@ -218,6 +218,7 @@ public:
 	};
 	virtual RID material_create() = 0;
 
+	virtual void material_set_path(RID p_material, const String &p_path) = 0;
 	virtual void material_set_shader(RID p_shader_material, RID p_shader) = 0;
 	virtual RID material_get_shader(RID p_shader_material) const = 0;
 

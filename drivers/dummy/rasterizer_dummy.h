@@ -274,6 +274,7 @@ public:
 
 	RID material_create() { return RID(); }
 
+	void material_set_path(RID p_material, const String &p_path) {}
 	void material_set_render_priority(RID p_material, int priority) {}
 	void material_set_shader(RID p_shader_material, RID p_shader) {}
 	RID material_get_shader(RID p_shader_material) const { return RID(); }
