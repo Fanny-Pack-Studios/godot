@@ -50,6 +50,7 @@ Engine::ShaderCompilationEvent::ShaderCompilationEvent() {
 	cache_eligible = false;
 	cache_lookup_attempted = false;
 	cache_hit = false;
+	resident_program_hit = false;
 	success = true;
 }
 
@@ -266,6 +267,7 @@ Array Engine::drain_shader_compilation_events() {
 		item["cache_eligible"] = event.cache_eligible;
 		item["cache_lookup_attempted"] = event.cache_lookup_attempted;
 		item["cache_hit"] = event.cache_hit;
+		item["resident_program_hit"] = event.resident_program_hit;
 		item["program_cache_key"] = event.program_cache_key;
 		item["vertex_source_hash"] = event.vertex_source_hash;
 		item["fragment_source_hash"] = event.fragment_source_hash;

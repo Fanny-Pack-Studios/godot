@@ -245,6 +245,9 @@ String ShaderGLES3::_diagnostic_compilation_mode() const {
 }
 
 String ShaderGLES3::_diagnostic_source(const Version *p_version) const {
+	if (p_version->diagnostic_resident_program_hit) {
+		return "resident_program";
+	}
 	switch (p_version->program_binary.source) {
 		case Version::ProgramBinary::SOURCE_LOCAL:
 			return "source";
@@ -273,6 +276,7 @@ void ShaderGLES3::_diagnostic_start(Version *p_version, const String &p_operatio
 	}
 
 	p_version->diagnostic_started_usec = OS::get_singleton()->get_ticks_usec();
+	p_version->diagnostic_operation = p_operation;
 	Engine::ShaderCompilationEvent event;
 	event.timestamp_usec = p_version->diagnostic_started_usec;
 	event.idle_frame = engine->get_idle_frames();
@@ -291,6 +295,7 @@ void ShaderGLES3::_diagnostic_start(Version *p_version, const String &p_operatio
 	event.cache_eligible = p_version->diagnostic_cache_eligible;
 	event.cache_lookup_attempted = p_version->diagnostic_cache_lookup_attempted;
 	event.cache_hit = p_version->diagnostic_cache_hit;
+	event.resident_program_hit = p_version->diagnostic_resident_program_hit;
 	event.program_cache_key = p_version->diagnostic_program_cache_key;
 	event.vertex_source_hash = p_version->diagnostic_vertex_source_hash;
 	event.fragment_source_hash = p_version->diagnostic_fragment_source_hash;
@@ -326,7 +331,7 @@ void ShaderGLES3::_diagnostic_finish(Version *p_version, bool p_success) {
 	event.custom_code_id = p_version->version_key.code_version;
 	event.custom_code_version = p_version->diagnostic_custom_code_version;
 	event.phase = "finished";
-	event.operation = p_version->program_binary.source == Version::ProgramBinary::SOURCE_CACHE ? "program_binary_load" : "compile";
+	event.operation = p_version->diagnostic_operation;
 	event.backend = "gles3";
 	event.compilation_mode = _diagnostic_compilation_mode();
 	event.source = _diagnostic_source(p_version);
@@ -336,6 +341,7 @@ void ShaderGLES3::_diagnostic_finish(Version *p_version, bool p_success) {
 	event.cache_eligible = p_version->diagnostic_cache_eligible;
 	event.cache_lookup_attempted = p_version->diagnostic_cache_lookup_attempted;
 	event.cache_hit = p_version->diagnostic_cache_hit;
+	event.resident_program_hit = p_version->diagnostic_resident_program_hit;
 	event.program_cache_key = p_version->diagnostic_program_cache_key;
 	event.vertex_source_hash = p_version->diagnostic_vertex_source_hash;
 	event.fragment_source_hash = p_version->diagnostic_fragment_source_hash;
@@ -548,6 +554,7 @@ bool ShaderGLES3::_process_program_state(Version *p_version, bool p_async_forbid
 							});
 						}
 						p_version->compile_status = Version::COMPILE_STATUS_OK;
+						p_version->shader->_retain_resident_program(p_version);
 						p_version->shader->_diagnostic_finish(p_version, true);
 						ready = true;
 					} else {
@@ -694,10 +701,13 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	v.diagnostic_fragment_source = String();
 	v.diagnostic_enabled_conditionals.clear();
 	v.diagnostic_custom_defines.clear();
+	v.diagnostic_operation = String();
+	v.resident_program_key = String();
 	v.diagnostic_debug_target = Engine::get_singleton()->is_shader_compilation_debug_target(diagnostic_material_path);
 	v.diagnostic_cache_eligible = effective_version.is_subject_to_caching();
 	v.diagnostic_cache_lookup_attempted = false;
 	v.diagnostic_cache_hit = false;
+	v.diagnostic_resident_program_hit = false;
 	v.diagnostic_started = false;
 	v.diagnostic_finished = false;
 
@@ -781,12 +791,6 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 		}
 	}
 	v.diagnostic_custom_code_version = v.code_version;
-
-	/* CREATE PROGRAM */
-
-	v.ids.main = glCreateProgram();
-
-	ERR_FAIL_COND_V(v.ids.main == 0, nullptr);
 
 	// To create the ubershader we need to modify the static strings;
 	// they'll go in this array
@@ -962,8 +966,9 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 		reinterpret_cast<const char *>(glGetString(GL_VERSION)),
 		nullptr,
 	};
+	v.resident_program_key = ShaderCacheGLES3::hash_program(strings_platform, strings_vertex, strings_fragment);
 	if (v.diagnostic_cache_eligible || v.diagnostic_debug_target) {
-		v.program_binary.cache_hash = ShaderCacheGLES3::hash_program(strings_platform, strings_vertex, strings_fragment);
+		v.program_binary.cache_hash = v.resident_program_key;
 		v.diagnostic_program_cache_key = v.program_binary.cache_hash;
 	}
 	if (v.diagnostic_debug_target) {
@@ -974,6 +979,17 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 		v.diagnostic_vertex_source = _join_shader_source(strings_vertex);
 		v.diagnostic_fragment_source = _join_shader_source(strings_fragment);
 	}
+	if (_reuse_resident_program(&v)) {
+		if (cc) {
+			cc->versions.insert(effective_version.version);
+		}
+		_diagnostic_start(&v, "resident_program_reuse");
+		_diagnostic_finish(&v, true);
+		return &v;
+	}
+
+	v.ids.main = glCreateProgram();
+	ERR_FAIL_COND_V(v.ids.main == 0, nullptr);
 
 	bool in_cache = false;
 	if (shader_cache && v.diagnostic_cache_eligible) {
@@ -1251,6 +1267,50 @@ void ShaderGLES3::_setup_uniforms(CustomCode *p_cc) const {
 	}
 }
 
+bool ShaderGLES3::_reuse_resident_program(Version *p_version) {
+	const ResidentProgram *resident = resident_programs.getptr(p_version->resident_program_key);
+	if (!resident) {
+		return false;
+	}
+
+	p_version->ids = resident->ids;
+	p_version->program_binary.source = Version::ProgramBinary::SOURCE_NONE;
+	p_version->compile_status = Version::COMPILE_STATUS_OK;
+	p_version->uniforms_ready = false;
+	p_version->diagnostic_resident_program_hit = true;
+	return true;
+}
+
+void ShaderGLES3::_retain_resident_program(Version *p_version) {
+	ERR_FAIL_COND(p_version->resident_program_key.empty());
+
+	ResidentProgram *resident = resident_programs.getptr(p_version->resident_program_key);
+	if (resident) {
+		if (resident->ids.main != p_version->ids.main) {
+			glDeleteShader(p_version->ids.vert);
+			glDeleteShader(p_version->ids.frag);
+			glDeleteProgram(p_version->ids.main);
+			p_version->ids = resident->ids;
+		}
+		return;
+	}
+
+	ResidentProgram stored;
+	stored.ids = p_version->ids;
+	resident_programs[p_version->resident_program_key] = stored;
+}
+
+void ShaderGLES3::_free_resident_programs() {
+	const String *key = nullptr;
+	while ((key = resident_programs.next(key))) {
+		const ResidentProgram &resident = resident_programs[*key];
+		glDeleteShader(resident.ids.vert);
+		glDeleteShader(resident.ids.frag);
+		glDeleteProgram(resident.ids.main);
+	}
+	resident_programs.clear();
+}
+
 void ShaderGLES3::_dispose_program(Version *p_version) {
 	_diagnostic_finish(p_version, false);
 	if (compile_queue) {
@@ -1258,9 +1318,14 @@ void ShaderGLES3::_dispose_program(Version *p_version) {
 			compile_queue->cancel(p_version->ids.main);
 		}
 	}
-	glDeleteShader(p_version->ids.vert);
-	glDeleteShader(p_version->ids.frag);
-	glDeleteProgram(p_version->ids.main);
+	const ResidentProgram *resident = resident_programs.getptr(p_version->resident_program_key);
+	const bool is_resident = resident && resident->ids.main == p_version->ids.main;
+	if (!is_resident) {
+		glDeleteShader(p_version->ids.vert);
+		glDeleteShader(p_version->ids.frag);
+		glDeleteProgram(p_version->ids.main);
+	}
+	p_version->ids = Version::Ids();
 
 	if (p_version->compiling_list.in_list()) {
 		p_version->compiling_list.remove_from_list();
@@ -1406,6 +1471,7 @@ void ShaderGLES3::finish() {
 		_dispose_program(&v);
 		memdelete_arr(v.uniform_location);
 	}
+	_free_resident_programs();
 	ERR_FAIL_COND(versions_compiling.first());
 	ERR_FAIL_COND(active_compiles_count != 0);
 }

@@ -67,6 +67,7 @@ public:
 		bool cache_eligible;
 		bool cache_lookup_attempted;
 		bool cache_hit;
+		bool resident_program_hit;
 		bool success;
 
 		ShaderCompilationEvent();

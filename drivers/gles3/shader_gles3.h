@@ -188,10 +188,13 @@ private:
 		String diagnostic_fragment_source;
 		Vector<String> diagnostic_enabled_conditionals;
 		Vector<String> diagnostic_custom_defines;
+		String diagnostic_operation;
+		String resident_program_key;
 		bool diagnostic_debug_target;
 		bool diagnostic_cache_eligible;
 		bool diagnostic_cache_lookup_attempted;
 		bool diagnostic_cache_hit;
+		bool diagnostic_resident_program_hit;
 		bool diagnostic_started;
 		bool diagnostic_finished;
 
@@ -242,6 +245,7 @@ private:
 				diagnostic_cache_eligible(false),
 				diagnostic_cache_lookup_attempted(false),
 				diagnostic_cache_hit(false),
+				diagnostic_resident_program_hit(false),
 				diagnostic_started(false),
 				diagnostic_finished(false),
 				compile_status(COMPILE_STATUS_PENDING),
@@ -249,6 +253,13 @@ private:
 				program_binary() {}
 	};
 	static SelfList<Version>::List versions_compiling;
+
+	struct ResidentProgram {
+		Version::Ids ids;
+
+		ResidentProgram() :
+				ids() {}
+	};
 
 	Version *version;
 
@@ -258,6 +269,7 @@ private:
 
 	//this should use a way more cachefriendly version..
 	HashMap<VersionKey, Version, VersionKeyHash> version_map;
+	HashMap<String, ResidentProgram> resident_programs;
 
 	HashMap<uint32_t, CustomCode> custom_code_map;
 	uint32_t last_custom_code;
@@ -301,6 +313,9 @@ private:
 	static bool _process_program_state(Version *p_version, bool p_async_forbidden);
 	void _setup_uniforms(CustomCode *p_cc) const;
 	void _dispose_program(Version *p_version);
+	bool _reuse_resident_program(Version *p_version);
+	void _retain_resident_program(Version *p_version);
+	void _free_resident_programs();
 
 	static ShaderGLES3 *active;
 
