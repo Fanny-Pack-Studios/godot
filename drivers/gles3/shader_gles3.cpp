@@ -296,7 +296,7 @@ void ShaderGLES3::_diagnostic_start(Version *p_version, const String &p_operatio
 	event.cache_lookup_attempted = p_version->diagnostic_cache_lookup_attempted;
 	event.cache_hit = p_version->diagnostic_cache_hit;
 	event.resident_program_hit = p_version->diagnostic_resident_program_hit;
-	event.program_cache_key = p_version->diagnostic_program_cache_key;
+	event.program_cache_key = p_version->resident_program_key;
 	event.vertex_source_hash = p_version->diagnostic_vertex_source_hash;
 	event.fragment_source_hash = p_version->diagnostic_fragment_source_hash;
 	event.enabled_conditionals = p_version->diagnostic_enabled_conditionals;
@@ -342,7 +342,7 @@ void ShaderGLES3::_diagnostic_finish(Version *p_version, bool p_success) {
 	event.cache_lookup_attempted = p_version->diagnostic_cache_lookup_attempted;
 	event.cache_hit = p_version->diagnostic_cache_hit;
 	event.resident_program_hit = p_version->diagnostic_resident_program_hit;
-	event.program_cache_key = p_version->diagnostic_program_cache_key;
+	event.program_cache_key = p_version->resident_program_key;
 	event.vertex_source_hash = p_version->diagnostic_vertex_source_hash;
 	event.fragment_source_hash = p_version->diagnostic_fragment_source_hash;
 	event.enabled_conditionals = p_version->diagnostic_enabled_conditionals;
@@ -742,9 +742,7 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	bool build_ubershader = get_ubershader_flags_uniform() != -1 && (effective_version.version & VersionKey::UBERSHADER_FLAG);
 	if (build_ubershader) {
 		strings_common.push_back("#define IS_UBERSHADER\n");
-		if (v.diagnostic_debug_target) {
-			v.diagnostic_enabled_conditionals.push_back("IS_UBERSHADER");
-		}
+		v.diagnostic_enabled_conditionals.push_back("IS_UBERSHADER");
 		for (int i = 0; i < conditional_count; i++) {
 			String s = vformat("#define FLAG_%s (1 << %d)\n", String(conditional_defines[i]).strip_edges().trim_prefix("#define "), i);
 			CharString cs = s.ascii();
@@ -756,7 +754,7 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 		for (int i = 0; i < conditional_count; i++) {
 			bool enable = ((1 << i) & effective_version.version);
 			strings_common.push_back(enable ? conditional_defines[i] : "");
-			if (enable && v.diagnostic_debug_target) {
+			if (enable) {
 				v.diagnostic_enabled_conditionals.push_back(String(conditional_defines[i]).strip_edges().trim_prefix("#define ").strip_edges());
 			}
 

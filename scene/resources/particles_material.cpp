@@ -707,6 +707,10 @@ void ParticlesMaterial::flush_changes() {
 	material_mutex.unlock();
 }
 
+void ParticlesMaterial::_flush_shader_changes() {
+	flush_changes();
+}
+
 void ParticlesMaterial::_queue_shader_change() {
 	material_mutex.lock();
 

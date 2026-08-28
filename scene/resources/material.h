@@ -52,6 +52,7 @@ protected:
 	static void _bind_methods();
 	virtual void _resource_path_changed();
 	virtual bool _can_do_next_pass() const { return false; }
+	virtual void _flush_shader_changes() {}
 
 	void _validate_property(PropertyInfo &property) const;
 
@@ -67,6 +68,7 @@ public:
 	int get_render_priority() const;
 
 	virtual RID get_rid() const;
+	Dictionary precompile_shader_variant(const PoolStringArray &p_enabled_conditionals);
 
 	virtual Shader::Mode get_shader_mode() const = 0;
 	Material();
@@ -460,6 +462,7 @@ protected:
 	static void _bind_methods();
 	void _validate_property(PropertyInfo &property) const;
 	virtual bool _can_do_next_pass() const { return true; }
+	virtual void _flush_shader_changes();
 
 	Material3D(bool p_orm = false);
 

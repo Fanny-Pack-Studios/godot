@@ -174,6 +174,10 @@ void CanvasItemMaterial::flush_changes() {
 	material_mutex.unlock();
 }
 
+void CanvasItemMaterial::_flush_shader_changes() {
+	flush_changes();
+}
+
 void CanvasItemMaterial::_queue_shader_change() {
 	material_mutex.lock();
 

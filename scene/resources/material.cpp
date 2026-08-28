@@ -76,6 +76,14 @@ RID Material::get_rid() const {
 	return material;
 }
 
+Dictionary Material::precompile_shader_variant(const PoolStringArray &p_enabled_conditionals) {
+	// Built-in materials generate and attach their shaders lazily. Flush that
+	// work before entering the renderer so precompilation does not require a
+	// draw or a geometry instance to make the shader visible.
+	_flush_shader_changes();
+	return VS::get_singleton()->material_precompile_shader_variant(material, p_enabled_conditionals);
+}
+
 void Material::_resource_path_changed() {
 	VS::get_singleton()->material_set_path(material, get_path());
 }
@@ -92,6 +100,7 @@ void Material::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_render_priority", "priority"), &Material::set_render_priority);
 	ClassDB::bind_method(D_METHOD("get_render_priority"), &Material::get_render_priority);
+	ClassDB::bind_method(D_METHOD("precompile_shader_variant", "enabled_conditionals"), &Material::precompile_shader_variant);
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "render_priority", PROPERTY_HINT_RANGE, itos(RENDER_PRIORITY_MIN) + "," + itos(RENDER_PRIORITY_MAX) + ",1"), "set_render_priority", "get_render_priority");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "next_pass", PROPERTY_HINT_RESOURCE_TYPE, "Material"), "set_next_pass", "get_next_pass");
@@ -1132,6 +1141,10 @@ void Material3D::flush_changes() {
 	}
 
 	material_mutex.unlock();
+}
+
+void Material3D::_flush_shader_changes() {
+	flush_changes();
 }
 
 void Material3D::_queue_shader_change() {
