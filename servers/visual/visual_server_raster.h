@@ -215,6 +215,7 @@ public:
 	BIND2(material_set_path, RID, const String &)
 	BIND2(material_set_shader, RID, RID)
 	BIND1RC(RID, material_get_shader, RID)
+	BIND2R(Dictionary, material_precompile_shader_variant, RID, const PoolStringArray &)
 
 	BIND3(material_set_param, RID, const StringName &, const Variant &)
 	BIND2RC(Variant, material_get_param, RID, const StringName &)

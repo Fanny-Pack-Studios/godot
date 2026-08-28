@@ -623,6 +623,7 @@ public:
 	virtual void material_set_path(RID p_material, const String &p_path);
 	virtual void material_set_shader(RID p_material, RID p_shader);
 	virtual RID material_get_shader(RID p_material) const;
+	virtual Dictionary material_precompile_shader_variant(RID p_material, const PoolStringArray &p_enabled_conditionals);
 
 	virtual void material_set_param(RID p_material, const StringName &p_param, const Variant &p_value);
 	virtual Variant material_get_param(RID p_material, const StringName &p_param) const;

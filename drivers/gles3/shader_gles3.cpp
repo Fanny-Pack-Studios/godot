@@ -1527,6 +1527,95 @@ void ShaderGLES3::set_custom_shader(uint32_t p_code_id, const String &p_material
 	diagnostic_material_path = p_material_path;
 }
 
+static String _shader_conditional_name(const char *p_define) {
+	String name = String(p_define).strip_edges().trim_prefix("#define").strip_edges();
+	for (int i = 0; i < name.length(); i++) {
+		if (name[i] <= 32) {
+			return name.substr(0, i);
+		}
+	}
+	return name;
+}
+
+Dictionary ShaderGLES3::precompile_custom_shader_variant(uint32_t p_code_id, const PoolStringArray &p_enabled_conditionals, const String &p_material_path) {
+	Dictionary result;
+	result["success"] = false;
+	result["shader_name"] = get_shader_name();
+	result["material_path"] = p_material_path;
+
+	CustomCode *custom_code = custom_code_map.getptr(p_code_id);
+	if (!custom_code) {
+		result["error"] = "invalid_custom_code_id";
+		return result;
+	}
+
+	PoolStringArray available_conditionals;
+	for (int i = 0; i < conditional_count; i++) {
+		available_conditionals.append(_shader_conditional_name(conditional_defines[i]));
+	}
+	result["available_conditionals"] = available_conditionals;
+
+	uint32_t requested_variant = 0;
+	PoolStringArray normalized_conditionals;
+	PoolStringArray::Read requested = p_enabled_conditionals.read();
+	for (int requested_index = 0; requested_index < p_enabled_conditionals.size(); requested_index++) {
+		String requested_name = requested[requested_index].strip_edges().trim_prefix("#define").strip_edges();
+		bool found = false;
+		for (int conditional_index = 0; conditional_index < conditional_count; conditional_index++) {
+			const String conditional_name = _shader_conditional_name(conditional_defines[conditional_index]);
+			if (requested_name == conditional_name) {
+				requested_variant |= uint32_t(1) << conditional_index;
+				normalized_conditionals.append(conditional_name);
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			result["error"] = "unknown_conditional";
+			result["unknown_conditional"] = requested_name;
+			return result;
+		}
+	}
+
+	result["enabled_conditionals"] = normalized_conditionals;
+	result["variant"] = requested_variant;
+	result["custom_code_id"] = p_code_id;
+	result["custom_code_version"] = custom_code->version;
+
+	VersionKey requested_key;
+	requested_key.version = requested_variant;
+	requested_key.code_version = p_code_id;
+	const Version *existing = version_map.getptr(requested_key);
+	const bool already_compiled = existing && existing->code_version == custom_code->version && existing->compile_status == Version::COMPILE_STATUS_OK;
+
+	const VersionKey previous_requested_version = new_conditional_version;
+	const String previous_material_path = diagnostic_material_path;
+	if (active) {
+		active->unbind();
+	}
+	new_conditional_version = requested_key;
+	diagnostic_material_path = p_material_path;
+	const bool bound = _bind(true);
+
+	Version *compiled_version = version;
+	const bool success = bound && compiled_version && compiled_version->compile_status == Version::COMPILE_STATUS_OK;
+	result["success"] = success;
+	result["already_compiled"] = already_compiled;
+	if (compiled_version) {
+		result["program_cache_key"] = compiled_version->resident_program_key;
+		result["resident_program_hit"] = compiled_version->diagnostic_resident_program_hit;
+		result["operation"] = already_compiled ? "already_compiled" : compiled_version->diagnostic_operation;
+	}
+	if (!success) {
+		result["error"] = "shader_compilation_failed";
+	}
+
+	unbind();
+	new_conditional_version = previous_requested_version;
+	diagnostic_material_path = previous_material_path;
+	return result;
+}
+
 void ShaderGLES3::free_custom_shader(uint32_t p_code_id) {
 	ERR_FAIL_COND(!custom_code_map.has(p_code_id));
 	if (conditional_version.code_version == p_code_id) {

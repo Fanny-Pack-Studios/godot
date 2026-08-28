@@ -443,6 +443,7 @@ public:
 	uint32_t create_custom_shader();
 	void set_custom_shader_code(uint32_t p_code_id, const String &p_vertex, const String &p_vertex_globals, const String &p_fragment, const String &p_light, const String &p_fragment_globals, const String &p_uniforms, const Vector<StringName> &p_texture_uniforms, const Vector<CharString> &p_custom_defines, AsyncMode p_async_mode);
 	void set_custom_shader(uint32_t p_code_id, const String &p_material_path = String());
+	Dictionary precompile_custom_shader_variant(uint32_t p_code_id, const PoolStringArray &p_enabled_conditionals, const String &p_material_path = String());
 	void free_custom_shader(uint32_t p_code_id);
 	bool is_custom_code_ready_for_render(uint32_t p_code_id);
 

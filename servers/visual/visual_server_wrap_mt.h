@@ -141,6 +141,7 @@ public:
 	FUNC2(material_set_path, RID, const String &)
 	FUNC2(material_set_shader, RID, RID)
 	FUNC1RC(RID, material_get_shader, RID)
+	FUNC2R(Dictionary, material_precompile_shader_variant, RID, const PoolStringArray &)
 
 	FUNC3(material_set_param, RID, const StringName &, const Variant &)
 	FUNC2RC(Variant, material_get_param, RID, const StringName &)

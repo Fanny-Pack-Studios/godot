@@ -1913,6 +1913,7 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("material_set_path", "material", "path"), &VisualServer::material_set_path);
 	ClassDB::bind_method(D_METHOD("material_set_shader", "shader_material", "shader"), &VisualServer::material_set_shader);
 	ClassDB::bind_method(D_METHOD("material_get_shader", "shader_material"), &VisualServer::material_get_shader);
+	ClassDB::bind_method(D_METHOD("material_precompile_shader_variant", "material", "enabled_conditionals"), &VisualServer::material_precompile_shader_variant);
 	ClassDB::bind_method(D_METHOD("material_set_param", "material", "parameter", "value"), &VisualServer::material_set_param);
 	ClassDB::bind_method(D_METHOD("material_get_param", "material", "parameter"), &VisualServer::material_get_param);
 	ClassDB::bind_method(D_METHOD("material_get_param_default", "material", "parameter"), &VisualServer::material_get_param_default);
