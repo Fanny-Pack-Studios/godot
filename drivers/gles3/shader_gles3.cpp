@@ -1269,17 +1269,28 @@ bool ShaderGLES3::_reuse_resident_program(Version *p_version) {
 	if (!Engine::get_singleton()->is_shader_program_residency_enabled()) {
 		return false;
 	}
-	const ResidentProgram *resident = resident_programs.getptr(p_version->resident_program_key);
+	ResidentProgram *resident = resident_programs.getptr(p_version->resident_program_key);
 	if (!resident) {
 		return false;
 	}
 
+	_claim_resident_program(resident);
 	p_version->ids = resident->ids;
 	p_version->program_binary.source = Version::ProgramBinary::SOURCE_NONE;
 	p_version->compile_status = Version::COMPILE_STATUS_OK;
 	p_version->uniforms_ready = false;
 	p_version->diagnostic_resident_program_hit = true;
 	return true;
+}
+
+void ShaderGLES3::_claim_resident_program(ResidentProgram *p_resident) {
+	ERR_FAIL_NULL(p_resident);
+	const String owner = Engine::get_singleton()->get_shader_program_residency_owner();
+	if (owner.empty()) {
+		return;
+	}
+	p_resident->owner_managed = true;
+	p_resident->owners.insert(owner);
 }
 
 void ShaderGLES3::_retain_resident_program(Version *p_version) {
@@ -1290,6 +1301,7 @@ void ShaderGLES3::_retain_resident_program(Version *p_version) {
 
 	ResidentProgram *resident = resident_programs.getptr(p_version->resident_program_key);
 	if (resident) {
+		_claim_resident_program(resident);
 		if (resident->ids.main != p_version->ids.main) {
 			glDeleteShader(p_version->ids.vert);
 			glDeleteShader(p_version->ids.frag);
@@ -1301,8 +1313,85 @@ void ShaderGLES3::_retain_resident_program(Version *p_version) {
 
 	ResidentProgram stored;
 	stored.ids = p_version->ids;
+	_claim_resident_program(&stored);
 	resident_programs[p_version->resident_program_key] = stored;
 	Engine::get_singleton()->notify_shader_program_retained();
+}
+
+uint32_t ShaderGLES3::_evict_resident_program(const String &p_program_key) {
+	ResidentProgram *resident = resident_programs.getptr(p_program_key);
+	ERR_FAIL_NULL_V(resident, 0);
+
+	if (version && version->resident_program_key == p_program_key) {
+		if (active == this) {
+			unbind();
+		} else {
+			version = nullptr;
+		}
+	}
+
+	Vector<VersionKey> versions_to_remove;
+	const VersionKey *version_key = nullptr;
+	while ((version_key = version_map.next(version_key))) {
+		const Version &candidate = version_map[*version_key];
+		if (candidate.resident_program_key == p_program_key) {
+			versions_to_remove.push_back(*version_key);
+		}
+	}
+
+	for (int i = 0; i < versions_to_remove.size(); i++) {
+		const VersionKey key = versions_to_remove[i];
+		Version &candidate = version_map[key];
+		if (key.code_version != CUSTOM_SHADER_DISABLED) {
+			CustomCode *custom_code = custom_code_map.getptr(key.code_version);
+			if (custom_code) {
+				custom_code->versions.erase(key.version);
+			}
+		}
+		_dispose_program(&candidate);
+		memdelete_arr(candidate.uniform_location);
+		version_map.erase(key);
+	}
+
+	glDeleteShader(resident->ids.vert);
+	glDeleteShader(resident->ids.frag);
+	glDeleteProgram(resident->ids.main);
+	resident_programs.erase(p_program_key);
+	Engine::get_singleton()->notify_shader_program_released();
+	return versions_to_remove.size();
+}
+
+Dictionary ShaderGLES3::release_resident_program_owner(const String &p_owner) {
+	Dictionary result;
+	result["programs_released"] = 0;
+	result["versions_invalidated"] = 0;
+	if (p_owner.empty()) {
+		result["success"] = false;
+		result["error"] = "empty_owner";
+		return result;
+	}
+
+	Vector<String> programs_to_release;
+	const String *program_key = nullptr;
+	while ((program_key = resident_programs.next(program_key))) {
+		ResidentProgram &resident = resident_programs[*program_key];
+		if (!resident.owner_managed || !resident.owners.has(p_owner)) {
+			continue;
+		}
+		resident.owners.erase(p_owner);
+		if (resident.owners.empty()) {
+			programs_to_release.push_back(*program_key);
+		}
+	}
+
+	uint32_t versions_invalidated = 0;
+	for (int i = 0; i < programs_to_release.size(); i++) {
+		versions_invalidated += _evict_resident_program(programs_to_release[i]);
+	}
+	result["success"] = true;
+	result["programs_released"] = programs_to_release.size();
+	result["versions_invalidated"] = versions_invalidated;
+	return result;
 }
 
 void ShaderGLES3::_free_resident_programs() {
@@ -1606,6 +1695,12 @@ Dictionary ShaderGLES3::precompile_custom_shader_variant(uint32_t p_code_id, con
 
 	Version *compiled_version = version;
 	const bool success = bound && compiled_version && compiled_version->compile_status == Version::COMPILE_STATUS_OK;
+	if (success) {
+		ResidentProgram *resident = resident_programs.getptr(compiled_version->resident_program_key);
+		if (resident) {
+			_claim_resident_program(resident);
+		}
+	}
 	result["success"] = success;
 	result["already_compiled"] = already_compiled;
 	result["resident_program_count"] = Engine::get_singleton()->get_shader_resident_program_count();

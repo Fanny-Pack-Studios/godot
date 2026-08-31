@@ -37,6 +37,7 @@
 #include "core/math/camera_matrix.h"
 #include "core/safe_refcount.h"
 #include "core/self_list.h"
+#include "core/set.h"
 #include "core/variant.h"
 
 #include "platform_config.h"
@@ -256,9 +257,12 @@ private:
 
 	struct ResidentProgram {
 		Version::Ids ids;
+		Set<String> owners;
+		bool owner_managed;
 
 		ResidentProgram() :
-				ids() {}
+				ids(),
+				owner_managed(false) {}
 	};
 
 	Version *version;
@@ -314,7 +318,9 @@ private:
 	void _setup_uniforms(CustomCode *p_cc) const;
 	void _dispose_program(Version *p_version);
 	bool _reuse_resident_program(Version *p_version);
+	void _claim_resident_program(ResidentProgram *p_resident);
 	void _retain_resident_program(Version *p_version);
+	uint32_t _evict_resident_program(const String &p_program_key);
 	void _free_resident_programs();
 
 	static ShaderGLES3 *active;
@@ -444,6 +450,7 @@ public:
 	void set_custom_shader_code(uint32_t p_code_id, const String &p_vertex, const String &p_vertex_globals, const String &p_fragment, const String &p_light, const String &p_fragment_globals, const String &p_uniforms, const Vector<StringName> &p_texture_uniforms, const Vector<CharString> &p_custom_defines, AsyncMode p_async_mode);
 	void set_custom_shader(uint32_t p_code_id, const String &p_material_path = String());
 	Dictionary precompile_custom_shader_variant(uint32_t p_code_id, const PoolStringArray &p_enabled_conditionals, const String &p_material_path = String());
+	Dictionary release_resident_program_owner(const String &p_owner);
 	String get_public_shader_name() const { return get_shader_name(); }
 	void free_custom_shader(uint32_t p_code_id);
 	bool is_custom_code_ready_for_render(uint32_t p_code_id);

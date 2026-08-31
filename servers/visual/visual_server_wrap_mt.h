@@ -134,6 +134,7 @@ public:
 
 	FUNC1(set_shader_async_hidden_forbidden, bool)
 	FUNC2R(Dictionary, shader_precompile_internal_variant, const String &, const PoolStringArray &)
+	FUNC1R(Dictionary, shader_release_resident_program_owner, const String &)
 
 	/* COMMON MATERIAL API */
 

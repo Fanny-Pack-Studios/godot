@@ -860,6 +860,8 @@ public:
 	bool is_shader_compilation_tracking_enabled() const;
 	void set_shader_program_residency_enabled(bool p_enabled);
 	bool is_shader_program_residency_enabled() const;
+	void set_shader_program_residency_owner(const String &p_owner);
+	String get_shader_program_residency_owner() const;
 	uint32_t get_shader_resident_program_count() const;
 	Array drain_shader_compilation_events();
 	void clear_shader_compilation_events();

@@ -231,6 +231,16 @@ bool Engine::is_shader_program_residency_enabled() const {
 	return shader_program_residency_enabled.is_set();
 }
 
+void Engine::set_shader_program_residency_owner(const String &p_owner) {
+	MutexLock lock(shader_program_residency_owner_mutex);
+	shader_program_residency_owner = p_owner;
+}
+
+String Engine::get_shader_program_residency_owner() const {
+	MutexLock lock(shader_program_residency_owner_mutex);
+	return shader_program_residency_owner;
+}
+
 uint32_t Engine::get_shader_resident_program_count() const {
 	return shader_resident_program_count.get();
 }
@@ -408,6 +418,7 @@ Engine::Engine() {
 	shader_compilation_sequence.set(0);
 	shader_program_residency_enabled.clear();
 	shader_resident_program_count.set(0);
+	shader_program_residency_owner = String();
 	_portals_active = false;
 	_occlusion_culling_active = false;
 }

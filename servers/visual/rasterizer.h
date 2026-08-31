@@ -1316,6 +1316,13 @@ public:
 		result["error"] = "unsupported_renderer";
 		return result;
 	}
+	virtual Dictionary shader_release_resident_program_owner(const String &p_owner) {
+		Dictionary result;
+		result["success"] = false;
+		result["error"] = "unsupported_renderer";
+		result["owner"] = p_owner;
+		return result;
+	}
 
 	virtual void set_boot_image(const Ref<Image> &p_image, const Color &p_color, bool p_scale, bool p_use_filter = true) = 0;
 	virtual void set_shader_time_scale(float p_scale) = 0;

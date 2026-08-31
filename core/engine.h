@@ -110,6 +110,8 @@ private:
 	SafeNumeric<uint64_t> shader_compilation_sequence;
 	SafeFlag shader_program_residency_enabled;
 	SafeNumeric<uint32_t> shader_resident_program_count;
+	mutable Mutex shader_program_residency_owner_mutex;
+	String shader_program_residency_owner;
 	Mutex shader_compilation_events_mutex;
 	Vector<ShaderCompilationEvent> shader_compilation_events;
 	mutable Mutex shader_compilation_debug_targets_mutex;
@@ -153,6 +155,8 @@ public:
 	bool is_shader_compilation_tracking_enabled() const;
 	void set_shader_program_residency_enabled(bool p_enabled);
 	bool is_shader_program_residency_enabled() const;
+	void set_shader_program_residency_owner(const String &p_owner);
+	String get_shader_program_residency_owner() const;
 	uint32_t get_shader_resident_program_count() const;
 	void notify_shader_program_retained();
 	void notify_shader_program_released();

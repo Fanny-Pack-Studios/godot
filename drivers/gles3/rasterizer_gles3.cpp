@@ -84,6 +84,48 @@ Dictionary RasterizerGLES3::shader_precompile_internal_variant(const String &p_s
 	return result;
 }
 
+Dictionary RasterizerGLES3::shader_release_resident_program_owner(const String &p_owner) {
+	ShaderGLES3 *internal_shaders[] = {
+		&storage->shaders.copy,
+		&storage->shaders.cubemap_filter,
+		&storage->shaders.blend_shapes,
+		&storage->shaders.particles,
+		&scene->state.scene_shader,
+		&scene->state.cube_to_dp_shader,
+		&scene->state.resolve_shader,
+		&scene->state.ssr_shader,
+		&scene->state.effect_blur_shader,
+		&scene->state.sss_shader,
+		&scene->state.ssao_minify_shader,
+		&scene->state.ssao_shader,
+		&scene->state.ssao_blur_shader,
+		&scene->state.exposure_shader,
+		&scene->state.tonemap_shader,
+		&canvas->state.canvas_shader,
+		&canvas->state.canvas_shadow_shader,
+		&canvas->state.lens_shader,
+	};
+
+	uint32_t programs_released = 0;
+	uint32_t versions_invalidated = 0;
+	for (uint32_t i = 0; i < sizeof(internal_shaders) / sizeof(internal_shaders[0]); i++) {
+		Dictionary shader_result = internal_shaders[i]->release_resident_program_owner(p_owner);
+		if (!(bool)shader_result["success"]) {
+			return shader_result;
+		}
+		programs_released += (uint32_t)(int)shader_result["programs_released"];
+		versions_invalidated += (uint32_t)(int)shader_result["versions_invalidated"];
+	}
+
+	Dictionary result;
+	result["success"] = true;
+	result["owner"] = p_owner;
+	result["programs_released"] = programs_released;
+	result["versions_invalidated"] = versions_invalidated;
+	result["resident_program_count"] = Engine::get_singleton()->get_shader_resident_program_count();
+	return result;
+}
+
 #define _EXT_DEBUG_OUTPUT_SYNCHRONOUS_ARB 0x8242
 #define _EXT_DEBUG_NEXT_LOGGED_MESSAGE_LENGTH_ARB 0x8243
 #define _EXT_DEBUG_CALLBACK_FUNCTION_ARB 0x8244

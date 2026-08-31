@@ -3286,6 +3286,14 @@ bool _Engine::is_shader_program_residency_enabled() const {
 	return Engine::get_singleton()->is_shader_program_residency_enabled();
 }
 
+void _Engine::set_shader_program_residency_owner(const String &p_owner) {
+	Engine::get_singleton()->set_shader_program_residency_owner(p_owner);
+}
+
+String _Engine::get_shader_program_residency_owner() const {
+	return Engine::get_singleton()->get_shader_program_residency_owner();
+}
+
 uint32_t _Engine::get_shader_resident_program_count() const {
 	return Engine::get_singleton()->get_shader_resident_program_count();
 }
@@ -3347,6 +3355,8 @@ void _Engine::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("is_shader_compilation_tracking_enabled"), &_Engine::is_shader_compilation_tracking_enabled);
 	ClassDB::bind_method(D_METHOD("set_shader_program_residency_enabled", "enabled"), &_Engine::set_shader_program_residency_enabled);
 	ClassDB::bind_method(D_METHOD("is_shader_program_residency_enabled"), &_Engine::is_shader_program_residency_enabled);
+	ClassDB::bind_method(D_METHOD("set_shader_program_residency_owner", "owner"), &_Engine::set_shader_program_residency_owner);
+	ClassDB::bind_method(D_METHOD("get_shader_program_residency_owner"), &_Engine::get_shader_program_residency_owner);
 	ClassDB::bind_method(D_METHOD("get_shader_resident_program_count"), &_Engine::get_shader_resident_program_count);
 	ClassDB::bind_method(D_METHOD("drain_shader_compilation_events"), &_Engine::drain_shader_compilation_events);
 	ClassDB::bind_method(D_METHOD("clear_shader_compilation_events"), &_Engine::clear_shader_compilation_events);

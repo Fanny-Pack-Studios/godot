@@ -209,6 +209,7 @@ public:
 
 	virtual void set_shader_async_hidden_forbidden(bool p_forbidden) = 0;
 	virtual Dictionary shader_precompile_internal_variant(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals) = 0;
+	virtual Dictionary shader_release_resident_program_owner(const String &p_owner) = 0;
 
 	/* COMMON MATERIAL API */
 
