@@ -1908,6 +1908,7 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("shader_set_default_texture_param", "shader", "name", "texture"), &VisualServer::shader_set_default_texture_param);
 	ClassDB::bind_method(D_METHOD("shader_get_default_texture_param", "shader", "name"), &VisualServer::shader_get_default_texture_param);
 	ClassDB::bind_method(D_METHOD("set_shader_async_hidden_forbidden", "forbidden"), &VisualServer::set_shader_async_hidden_forbidden);
+	ClassDB::bind_method(D_METHOD("shader_precompile_internal_variant", "shader_name", "enabled_conditionals"), &VisualServer::shader_precompile_internal_variant);
 
 	ClassDB::bind_method(D_METHOD("material_create"), &VisualServer::material_create);
 	ClassDB::bind_method(D_METHOD("material_set_path", "material", "path"), &VisualServer::material_set_path);

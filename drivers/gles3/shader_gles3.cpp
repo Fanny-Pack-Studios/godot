@@ -1550,7 +1550,7 @@ Dictionary ShaderGLES3::precompile_custom_shader_variant(uint32_t p_code_id, con
 	result["material_path"] = p_material_path;
 
 	CustomCode *custom_code = custom_code_map.getptr(p_code_id);
-	if (!custom_code) {
+	if (p_code_id != CUSTOM_SHADER_DISABLED && !custom_code) {
 		result["error"] = "invalid_custom_code_id";
 		return result;
 	}
@@ -1586,13 +1586,14 @@ Dictionary ShaderGLES3::precompile_custom_shader_variant(uint32_t p_code_id, con
 	result["enabled_conditionals"] = normalized_conditionals;
 	result["variant"] = requested_variant;
 	result["custom_code_id"] = p_code_id;
-	result["custom_code_version"] = custom_code->version;
+	result["custom_code_version"] = custom_code ? custom_code->version : 0;
 
 	VersionKey requested_key;
 	requested_key.version = requested_variant;
 	requested_key.code_version = p_code_id;
 	const Version *existing = version_map.getptr(requested_key);
-	const bool already_compiled = existing && existing->code_version == custom_code->version && existing->compile_status == Version::COMPILE_STATUS_OK;
+	const uint32_t requested_code_version = custom_code ? custom_code->version : 0;
+	const bool already_compiled = existing && existing->code_version == requested_code_version && existing->compile_status == Version::COMPILE_STATUS_OK;
 
 	const VersionKey previous_requested_version = new_conditional_version;
 	const String previous_material_path = diagnostic_material_path;

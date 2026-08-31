@@ -133,6 +133,7 @@ public:
 	FUNC2(shader_remove_custom_define, RID, const String &)
 
 	FUNC1(set_shader_async_hidden_forbidden, bool)
+	FUNC2R(Dictionary, shader_precompile_internal_variant, const String &, const PoolStringArray &)
 
 	/* COMMON MATERIAL API */
 

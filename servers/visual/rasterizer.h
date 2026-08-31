@@ -1310,6 +1310,12 @@ public:
 	virtual RasterizerStorage *get_storage() = 0;
 	virtual RasterizerCanvas *get_canvas() = 0;
 	virtual RasterizerScene *get_scene() = 0;
+	virtual Dictionary shader_precompile_internal_variant(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals) {
+		Dictionary result;
+		result["success"] = false;
+		result["error"] = "unsupported_renderer";
+		return result;
+	}
 
 	virtual void set_boot_image(const Ref<Image> &p_image, const Color &p_color, bool p_scale, bool p_use_filter = true) = 0;
 	virtual void set_shader_time_scale(float p_scale) = 0;

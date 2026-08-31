@@ -45,6 +45,45 @@ RasterizerScene *RasterizerGLES3::get_scene() {
 	return scene;
 }
 
+Dictionary RasterizerGLES3::shader_precompile_internal_variant(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals) {
+	ShaderGLES3 *internal_shaders[] = {
+		&storage->shaders.copy,
+		&storage->shaders.cubemap_filter,
+		&storage->shaders.blend_shapes,
+		&storage->shaders.particles,
+		&scene->state.scene_shader,
+		&scene->state.cube_to_dp_shader,
+		&scene->state.resolve_shader,
+		&scene->state.ssr_shader,
+		&scene->state.effect_blur_shader,
+		&scene->state.sss_shader,
+		&scene->state.ssao_minify_shader,
+		&scene->state.ssao_shader,
+		&scene->state.ssao_blur_shader,
+		&scene->state.exposure_shader,
+		&scene->state.tonemap_shader,
+		&canvas->state.canvas_shader,
+		&canvas->state.canvas_shadow_shader,
+		&canvas->state.lens_shader,
+	};
+
+	PoolStringArray available_shader_names;
+	for (uint32_t i = 0; i < sizeof(internal_shaders) / sizeof(internal_shaders[0]); i++) {
+		const String shader_name = internal_shaders[i]->get_public_shader_name();
+		available_shader_names.append(shader_name);
+		if (shader_name == p_shader_name) {
+			return internal_shaders[i]->precompile_custom_shader_variant(ShaderGLES3::CUSTOM_SHADER_DISABLED, p_enabled_conditionals);
+		}
+	}
+
+	Dictionary result;
+	result["success"] = false;
+	result["error"] = "unknown_internal_shader";
+	result["shader_name"] = p_shader_name;
+	result["available_shader_names"] = available_shader_names;
+	return result;
+}
+
 #define _EXT_DEBUG_OUTPUT_SYNCHRONOUS_ARB 0x8242
 #define _EXT_DEBUG_NEXT_LOGGED_MESSAGE_LENGTH_ARB 0x8243
 #define _EXT_DEBUG_CALLBACK_FUNCTION_ARB 0x8244

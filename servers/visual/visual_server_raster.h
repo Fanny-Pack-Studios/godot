@@ -207,6 +207,7 @@ public:
 	BIND2(shader_remove_custom_define, RID, const String &)
 
 	BIND1(set_shader_async_hidden_forbidden, bool)
+	virtual Dictionary shader_precompile_internal_variant(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals);
 
 	/* COMMON MATERIAL API */
 

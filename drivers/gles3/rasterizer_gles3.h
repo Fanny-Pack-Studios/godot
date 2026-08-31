@@ -50,6 +50,7 @@ public:
 	virtual RasterizerStorage *get_storage();
 	virtual RasterizerCanvas *get_canvas();
 	virtual RasterizerScene *get_scene();
+	virtual Dictionary shader_precompile_internal_variant(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals);
 
 	virtual void set_boot_image(const Ref<Image> &p_image, const Color &p_color, bool p_scale, bool p_use_filter = true);
 	virtual void set_shader_time_scale(float p_scale);

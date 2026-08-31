@@ -208,6 +208,7 @@ public:
 	virtual void shader_remove_custom_define(RID p_shader, const String &p_define) = 0;
 
 	virtual void set_shader_async_hidden_forbidden(bool p_forbidden) = 0;
+	virtual Dictionary shader_precompile_internal_variant(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals) = 0;
 
 	/* COMMON MATERIAL API */
 
