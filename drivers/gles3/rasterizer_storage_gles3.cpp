@@ -2566,6 +2566,12 @@ RID RasterizerStorageGLES3::material_create() {
 	return material_owner.make_rid(material);
 }
 
+void RasterizerStorageGLES3::material_set_path(RID p_material, const String &p_path) {
+	Material *material = material_owner.get(p_material);
+	ERR_FAIL_COND(!material);
+	material->path = p_path;
+}
+
 void RasterizerStorageGLES3::material_set_shader(RID p_material, RID p_shader) {
 	Material *material = material_owner.get(p_material);
 	ERR_FAIL_COND(!material);
@@ -2594,6 +2600,32 @@ RID RasterizerStorageGLES3::material_get_shader(RID p_material) const {
 	}
 
 	return RID();
+}
+
+Dictionary RasterizerStorageGLES3::material_precompile_shader_variant(RID p_material, const PoolStringArray &p_enabled_conditionals) {
+	Dictionary result;
+	result["success"] = false;
+
+	Material *material = material_owner.getornull(p_material);
+	if (!material) {
+		result["error"] = "invalid_material";
+		return result;
+	}
+	if (!material->shader) {
+		result["error"] = "material_has_no_shader";
+		return result;
+	}
+
+	Shader *shader = material->shader;
+	if (shader->dirty_list.in_list()) {
+		_update_shader(shader);
+	}
+	if (!shader->valid || !shader->shader || shader->custom_code_id == 0) {
+		result["error"] = "invalid_shader";
+		return result;
+	}
+
+	return shader->shader->precompile_custom_shader_variant(shader->custom_code_id, p_enabled_conditionals, material->path);
 }
 
 void RasterizerStorageGLES3::material_set_param(RID p_material, const StringName &p_param, const Variant &p_value) {
@@ -6663,7 +6695,7 @@ void RasterizerStorageGLES3::update_particles() {
 		if (!material || !material->shader || material->shader->mode != VS::SHADER_PARTICLES) {
 			shaders.particles.set_custom_shader(0);
 		} else {
-			shaders.particles.set_custom_shader(material->shader->custom_code_id);
+			shaders.particles.set_custom_shader(material->shader->custom_code_id, material->path);
 
 			if (material->ubo_id) {
 				glBindBufferBase(GL_UNIFORM_BUFFER, 0, material->ubo_id);

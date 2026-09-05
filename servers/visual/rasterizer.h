@@ -258,9 +258,16 @@ public:
 
 	virtual RID material_create() = 0;
 
+	virtual void material_set_path(RID p_material, const String &p_path) = 0;
 	virtual void material_set_render_priority(RID p_material, int priority) = 0;
 	virtual void material_set_shader(RID p_shader_material, RID p_shader) = 0;
 	virtual RID material_get_shader(RID p_shader_material) const = 0;
+	virtual Dictionary material_precompile_shader_variant(RID p_material, const PoolStringArray &p_enabled_conditionals) {
+		Dictionary result;
+		result["success"] = false;
+		result["error"] = "unsupported_renderer";
+		return result;
+	}
 
 	virtual void material_set_param(RID p_material, const StringName &p_param, const Variant &p_value) = 0;
 	virtual Variant material_get_param(RID p_material, const StringName &p_param) const = 0;
@@ -1303,6 +1310,19 @@ public:
 	virtual RasterizerStorage *get_storage() = 0;
 	virtual RasterizerCanvas *get_canvas() = 0;
 	virtual RasterizerScene *get_scene() = 0;
+	virtual Dictionary shader_precompile_internal_variant(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals) {
+		Dictionary result;
+		result["success"] = false;
+		result["error"] = "unsupported_renderer";
+		return result;
+	}
+	virtual Dictionary shader_release_resident_program_owner(const String &p_owner) {
+		Dictionary result;
+		result["success"] = false;
+		result["error"] = "unsupported_renderer";
+		result["owner"] = p_owner;
+		return result;
+	}
 
 	virtual void set_boot_image(const Ref<Image> &p_image, const Color &p_color, bool p_scale, bool p_use_filter = true) = 0;
 	virtual void set_shader_time_scale(float p_scale) = 0;

@@ -33,11 +33,46 @@
 
 #include "core/list.h"
 #include "core/os/main_loop.h"
+#include "core/os/mutex.h"
+#include "core/safe_refcount.h"
 #include "core/ustring.h"
 #include "core/vector.h"
 
 class Engine {
 public:
+	struct ShaderCompilationEvent {
+		uint64_t compilation_id;
+		uint64_t timestamp_usec;
+		uint64_t duration_usec;
+		uint64_t idle_frame;
+		uint64_t render_frame;
+		uint64_t variant;
+		uint32_t custom_code_id;
+		uint32_t custom_code_version;
+		String phase;
+		String operation;
+		String backend;
+		String compilation_mode;
+		String source;
+		String shader_name;
+		String material_path;
+		String program_cache_key;
+		String vertex_source_hash;
+		String fragment_source_hash;
+		String generated_vertex_source;
+		String generated_fragment_source;
+		Vector<String> enabled_conditionals;
+		Vector<String> custom_defines;
+		bool debug_target;
+		bool cache_eligible;
+		bool cache_lookup_attempted;
+		bool cache_hit;
+		bool resident_program_hit;
+		bool success;
+
+		ShaderCompilationEvent();
+	};
+
 	struct Singleton {
 		StringName name;
 		Object *ptr;
@@ -70,6 +105,17 @@ private:
 	Map<StringName, Object *> singleton_ptrs;
 
 	bool editor_hint;
+
+	SafeFlag shader_compilation_tracking_enabled;
+	SafeNumeric<uint64_t> shader_compilation_sequence;
+	SafeFlag shader_program_residency_enabled;
+	SafeNumeric<uint32_t> shader_resident_program_count;
+	mutable Mutex shader_program_residency_owner_mutex;
+	String shader_program_residency_owner;
+	Mutex shader_compilation_events_mutex;
+	Vector<ShaderCompilationEvent> shader_compilation_events;
+	mutable Mutex shader_compilation_debug_targets_mutex;
+	Vector<String> shader_compilation_debug_targets;
 
 	static Engine *singleton;
 
@@ -104,6 +150,22 @@ public:
 
 	void set_print_error_messages(bool p_enabled);
 	bool is_printing_error_messages() const;
+
+	void set_shader_compilation_tracking_enabled(bool p_enabled);
+	bool is_shader_compilation_tracking_enabled() const;
+	void set_shader_program_residency_enabled(bool p_enabled);
+	bool is_shader_program_residency_enabled() const;
+	void set_shader_program_residency_owner(const String &p_owner);
+	String get_shader_program_residency_owner() const;
+	uint32_t get_shader_resident_program_count() const;
+	void notify_shader_program_retained();
+	void notify_shader_program_released();
+	uint64_t record_shader_compilation_event(const ShaderCompilationEvent &p_event);
+	Array drain_shader_compilation_events();
+	void clear_shader_compilation_events();
+	void set_shader_compilation_debug_targets(const PoolStringArray &p_targets);
+	PoolStringArray get_shader_compilation_debug_targets() const;
+	bool is_shader_compilation_debug_target(const String &p_material_path) const;
 
 	void add_singleton(const Singleton &p_singleton);
 	void get_singletons(List<Singleton> *p_singletons);

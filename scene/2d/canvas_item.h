@@ -127,6 +127,7 @@ private:
 protected:
 	static void _bind_methods();
 	void _validate_property(PropertyInfo &property) const;
+	virtual void _flush_shader_changes();
 
 public:
 	void set_blend_mode(BlendMode p_blend_mode);

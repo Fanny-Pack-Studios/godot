@@ -1144,7 +1144,7 @@ bool RasterizerSceneGLES3::_setup_material(RasterizerStorageGLES3::Material *p_m
 
 	//material parameters
 
-	state.scene_shader.set_custom_shader(p_material->shader->custom_code_id);
+	state.scene_shader.set_custom_shader(p_material->shader->custom_code_id, p_material->path);
 	bool rebind = state.scene_shader.bind();
 	if (!ShaderGLES3::get_active()) {
 		return false;

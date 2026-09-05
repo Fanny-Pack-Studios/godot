@@ -1784,6 +1784,12 @@ RID RasterizerStorageGLES2::material_create() {
 	return material_owner.make_rid(material);
 }
 
+void RasterizerStorageGLES2::material_set_path(RID p_material, const String &p_path) {
+	Material *material = material_owner.get(p_material);
+	ERR_FAIL_COND(!material);
+	material->path = p_path;
+}
+
 void RasterizerStorageGLES2::material_set_shader(RID p_material, RID p_shader) {
 	Material *material = material_owner.get(p_material);
 	ERR_FAIL_COND(!material);

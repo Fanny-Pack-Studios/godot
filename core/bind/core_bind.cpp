@@ -3270,6 +3270,50 @@ bool _Engine::is_printing_error_messages() const {
 	return Engine::get_singleton()->is_printing_error_messages();
 }
 
+void _Engine::set_shader_compilation_tracking_enabled(bool p_enabled) {
+	Engine::get_singleton()->set_shader_compilation_tracking_enabled(p_enabled);
+}
+
+bool _Engine::is_shader_compilation_tracking_enabled() const {
+	return Engine::get_singleton()->is_shader_compilation_tracking_enabled();
+}
+
+void _Engine::set_shader_program_residency_enabled(bool p_enabled) {
+	Engine::get_singleton()->set_shader_program_residency_enabled(p_enabled);
+}
+
+bool _Engine::is_shader_program_residency_enabled() const {
+	return Engine::get_singleton()->is_shader_program_residency_enabled();
+}
+
+void _Engine::set_shader_program_residency_owner(const String &p_owner) {
+	Engine::get_singleton()->set_shader_program_residency_owner(p_owner);
+}
+
+String _Engine::get_shader_program_residency_owner() const {
+	return Engine::get_singleton()->get_shader_program_residency_owner();
+}
+
+uint32_t _Engine::get_shader_resident_program_count() const {
+	return Engine::get_singleton()->get_shader_resident_program_count();
+}
+
+Array _Engine::drain_shader_compilation_events() {
+	return Engine::get_singleton()->drain_shader_compilation_events();
+}
+
+void _Engine::clear_shader_compilation_events() {
+	Engine::get_singleton()->clear_shader_compilation_events();
+}
+
+void _Engine::set_shader_compilation_debug_targets(const PoolStringArray &p_targets) {
+	Engine::get_singleton()->set_shader_compilation_debug_targets(p_targets);
+}
+
+PoolStringArray _Engine::get_shader_compilation_debug_targets() const {
+	return Engine::get_singleton()->get_shader_compilation_debug_targets();
+}
+
 void _Engine::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_iterations_per_second", "iterations_per_second"), &_Engine::set_iterations_per_second);
 	ClassDB::bind_method(D_METHOD("get_iterations_per_second"), &_Engine::get_iterations_per_second);
@@ -3306,6 +3350,18 @@ void _Engine::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_print_error_messages", "enabled"), &_Engine::set_print_error_messages);
 	ClassDB::bind_method(D_METHOD("is_printing_error_messages"), &_Engine::is_printing_error_messages);
+
+	ClassDB::bind_method(D_METHOD("set_shader_compilation_tracking_enabled", "enabled"), &_Engine::set_shader_compilation_tracking_enabled);
+	ClassDB::bind_method(D_METHOD("is_shader_compilation_tracking_enabled"), &_Engine::is_shader_compilation_tracking_enabled);
+	ClassDB::bind_method(D_METHOD("set_shader_program_residency_enabled", "enabled"), &_Engine::set_shader_program_residency_enabled);
+	ClassDB::bind_method(D_METHOD("is_shader_program_residency_enabled"), &_Engine::is_shader_program_residency_enabled);
+	ClassDB::bind_method(D_METHOD("set_shader_program_residency_owner", "owner"), &_Engine::set_shader_program_residency_owner);
+	ClassDB::bind_method(D_METHOD("get_shader_program_residency_owner"), &_Engine::get_shader_program_residency_owner);
+	ClassDB::bind_method(D_METHOD("get_shader_resident_program_count"), &_Engine::get_shader_resident_program_count);
+	ClassDB::bind_method(D_METHOD("drain_shader_compilation_events"), &_Engine::drain_shader_compilation_events);
+	ClassDB::bind_method(D_METHOD("clear_shader_compilation_events"), &_Engine::clear_shader_compilation_events);
+	ClassDB::bind_method(D_METHOD("set_shader_compilation_debug_targets", "targets"), &_Engine::set_shader_compilation_debug_targets);
+	ClassDB::bind_method(D_METHOD("get_shader_compilation_debug_targets"), &_Engine::get_shader_compilation_debug_targets);
 
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "editor_hint"), "set_editor_hint", "is_editor_hint");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "print_error_messages"), "set_print_error_messages", "is_printing_error_messages");

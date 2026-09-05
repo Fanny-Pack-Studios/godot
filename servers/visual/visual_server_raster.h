@@ -207,13 +207,17 @@ public:
 	BIND2(shader_remove_custom_define, RID, const String &)
 
 	BIND1(set_shader_async_hidden_forbidden, bool)
+	virtual Dictionary shader_precompile_internal_variant(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals);
+	virtual Dictionary shader_release_resident_program_owner(const String &p_owner);
 
 	/* COMMON MATERIAL API */
 
 	BIND0R(RID, material_create)
 
+	BIND2(material_set_path, RID, const String &)
 	BIND2(material_set_shader, RID, RID)
 	BIND1RC(RID, material_get_shader, RID)
+	BIND2R(Dictionary, material_precompile_shader_variant, RID, const PoolStringArray &)
 
 	BIND3(material_set_param, RID, const StringName &, const Variant &)
 	BIND2RC(Variant, material_get_param, RID, const StringName &)

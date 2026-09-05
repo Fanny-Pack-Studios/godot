@@ -209,6 +209,14 @@ void VisualServerRaster::set_shader_time_scale(float p_scale) {
 	VSG::rasterizer->set_shader_time_scale(p_scale);
 }
 
+Dictionary VisualServerRaster::shader_precompile_internal_variant(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals) {
+	return VSG::rasterizer->shader_precompile_internal_variant(p_shader_name, p_enabled_conditionals);
+}
+
+Dictionary VisualServerRaster::shader_release_resident_program_owner(const String &p_owner) {
+	return VSG::rasterizer->shader_release_resident_program_owner(p_owner);
+}
+
 bool VisualServerRaster::has_feature(Features p_feature) const {
 	return false;
 }

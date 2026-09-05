@@ -1908,10 +1908,14 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("shader_set_default_texture_param", "shader", "name", "texture"), &VisualServer::shader_set_default_texture_param);
 	ClassDB::bind_method(D_METHOD("shader_get_default_texture_param", "shader", "name"), &VisualServer::shader_get_default_texture_param);
 	ClassDB::bind_method(D_METHOD("set_shader_async_hidden_forbidden", "forbidden"), &VisualServer::set_shader_async_hidden_forbidden);
+	ClassDB::bind_method(D_METHOD("shader_precompile_internal_variant", "shader_name", "enabled_conditionals"), &VisualServer::shader_precompile_internal_variant);
+	ClassDB::bind_method(D_METHOD("shader_release_resident_program_owner", "owner"), &VisualServer::shader_release_resident_program_owner);
 
 	ClassDB::bind_method(D_METHOD("material_create"), &VisualServer::material_create);
+	ClassDB::bind_method(D_METHOD("material_set_path", "material", "path"), &VisualServer::material_set_path);
 	ClassDB::bind_method(D_METHOD("material_set_shader", "shader_material", "shader"), &VisualServer::material_set_shader);
 	ClassDB::bind_method(D_METHOD("material_get_shader", "shader_material"), &VisualServer::material_get_shader);
+	ClassDB::bind_method(D_METHOD("material_precompile_shader_variant", "material", "enabled_conditionals"), &VisualServer::material_precompile_shader_variant);
 	ClassDB::bind_method(D_METHOD("material_set_param", "material", "parameter", "value"), &VisualServer::material_set_param);
 	ClassDB::bind_method(D_METHOD("material_get_param", "material", "parameter"), &VisualServer::material_get_param);
 	ClassDB::bind_method(D_METHOD("material_get_param_default", "material", "parameter"), &VisualServer::material_get_param_default);

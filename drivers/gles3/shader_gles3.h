@@ -37,6 +37,7 @@
 #include "core/math/camera_matrix.h"
 #include "core/safe_refcount.h"
 #include "core/self_list.h"
+#include "core/set.h"
 #include "core/variant.h"
 
 #include "platform_config.h"
@@ -177,6 +178,26 @@ private:
 		Vector<GLint> texture_uniform_locations;
 		bool uniforms_ready;
 		uint64_t last_frame_processed;
+		uint64_t diagnostic_compilation_id;
+		uint64_t diagnostic_started_usec;
+		String diagnostic_material_path;
+		uint32_t diagnostic_custom_code_version;
+		String diagnostic_program_cache_key;
+		String diagnostic_vertex_source_hash;
+		String diagnostic_fragment_source_hash;
+		String diagnostic_vertex_source;
+		String diagnostic_fragment_source;
+		Vector<String> diagnostic_enabled_conditionals;
+		Vector<String> diagnostic_custom_defines;
+		String diagnostic_operation;
+		String resident_program_key;
+		bool diagnostic_debug_target;
+		bool diagnostic_cache_eligible;
+		bool diagnostic_cache_lookup_attempted;
+		bool diagnostic_cache_hit;
+		bool diagnostic_resident_program_hit;
+		bool diagnostic_started;
+		bool diagnostic_finished;
 
 		enum CompileStatus {
 			COMPILE_STATUS_PENDING,
@@ -218,11 +239,31 @@ private:
 				uniform_location(nullptr),
 				uniforms_ready(false),
 				last_frame_processed(UINT64_MAX),
+				diagnostic_compilation_id(0),
+				diagnostic_started_usec(0),
+				diagnostic_custom_code_version(0),
+				diagnostic_debug_target(false),
+				diagnostic_cache_eligible(false),
+				diagnostic_cache_lookup_attempted(false),
+				diagnostic_cache_hit(false),
+				diagnostic_resident_program_hit(false),
+				diagnostic_started(false),
+				diagnostic_finished(false),
 				compile_status(COMPILE_STATUS_PENDING),
 				compiling_list(this),
 				program_binary() {}
 	};
 	static SelfList<Version>::List versions_compiling;
+
+	struct ResidentProgram {
+		Version::Ids ids;
+		Set<String> owners;
+		bool owner_managed;
+
+		ResidentProgram() :
+				ids(),
+				owner_managed(false) {}
+	};
 
 	Version *version;
 
@@ -232,9 +273,11 @@ private:
 
 	//this should use a way more cachefriendly version..
 	HashMap<VersionKey, Version, VersionKeyHash> version_map;
+	HashMap<String, ResidentProgram> resident_programs;
 
 	HashMap<uint32_t, CustomCode> custom_code_map;
 	uint32_t last_custom_code;
+	String diagnostic_material_path;
 
 	VersionKey conditional_version;
 	VersionKey new_conditional_version;
@@ -274,6 +317,11 @@ private:
 	static bool _process_program_state(Version *p_version, bool p_async_forbidden);
 	void _setup_uniforms(CustomCode *p_cc) const;
 	void _dispose_program(Version *p_version);
+	bool _reuse_resident_program(Version *p_version);
+	void _claim_resident_program(ResidentProgram *p_resident);
+	void _retain_resident_program(Version *p_version);
+	uint32_t _evict_resident_program(const String &p_program_key);
+	void _free_resident_programs();
 
 	static ShaderGLES3 *active;
 
@@ -370,6 +418,11 @@ private:
 
 	bool _bind(bool p_binding_fallback);
 	bool _bind_ubershader(bool p_for_warmrup = false);
+	void _diagnostic_start(Version *p_version, const String &p_operation);
+	void _diagnostic_finish(Version *p_version, bool p_success);
+	String _diagnostic_compilation_mode() const;
+	String _diagnostic_source(const Version *p_version) const;
+	static String _join_shader_source(const LocalVector<const char *> &p_strings);
 
 protected:
 	_FORCE_INLINE_ int _get_uniform(int p_which) const;
@@ -395,7 +448,10 @@ public:
 
 	uint32_t create_custom_shader();
 	void set_custom_shader_code(uint32_t p_code_id, const String &p_vertex, const String &p_vertex_globals, const String &p_fragment, const String &p_light, const String &p_fragment_globals, const String &p_uniforms, const Vector<StringName> &p_texture_uniforms, const Vector<CharString> &p_custom_defines, AsyncMode p_async_mode);
-	void set_custom_shader(uint32_t p_code_id);
+	void set_custom_shader(uint32_t p_code_id, const String &p_material_path = String());
+	Dictionary precompile_custom_shader_variant(uint32_t p_code_id, const PoolStringArray &p_enabled_conditionals, const String &p_material_path = String());
+	Dictionary release_resident_program_owner(const String &p_owner);
+	String get_public_shader_name() const { return get_shader_name(); }
 	void free_custom_shader(uint32_t p_code_id);
 	bool is_custom_code_ready_for_render(uint32_t p_code_id);
 

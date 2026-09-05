@@ -35,6 +35,25 @@
 #include "core/license.gen.h"
 #include "core/version.h"
 
+static const int MAX_QUEUED_SHADER_COMPILATION_EVENTS = 4096;
+
+Engine::ShaderCompilationEvent::ShaderCompilationEvent() {
+	compilation_id = 0;
+	timestamp_usec = 0;
+	duration_usec = 0;
+	idle_frame = 0;
+	render_frame = 0;
+	variant = 0;
+	custom_code_id = 0;
+	custom_code_version = 0;
+	debug_target = false;
+	cache_eligible = false;
+	cache_lookup_attempted = false;
+	cache_hit = false;
+	resident_program_hit = false;
+	success = true;
+}
+
 void Engine::set_iterations_per_second(int p_ips) {
 	ERR_FAIL_COND_MSG(p_ips <= 0, "Engine iterations per second must be greater than 0.");
 	ips = p_ips;
@@ -191,6 +210,166 @@ bool Engine::is_printing_error_messages() const {
 	return _print_error_enabled;
 }
 
+void Engine::set_shader_compilation_tracking_enabled(bool p_enabled) {
+	if (shader_compilation_tracking_enabled.is_set() == p_enabled) {
+		return;
+	}
+
+	shader_compilation_tracking_enabled.set_to(p_enabled);
+	clear_shader_compilation_events();
+}
+
+bool Engine::is_shader_compilation_tracking_enabled() const {
+	return shader_compilation_tracking_enabled.is_set();
+}
+
+void Engine::set_shader_program_residency_enabled(bool p_enabled) {
+	shader_program_residency_enabled.set_to(p_enabled);
+}
+
+bool Engine::is_shader_program_residency_enabled() const {
+	return shader_program_residency_enabled.is_set();
+}
+
+void Engine::set_shader_program_residency_owner(const String &p_owner) {
+	MutexLock lock(shader_program_residency_owner_mutex);
+	shader_program_residency_owner = p_owner;
+}
+
+String Engine::get_shader_program_residency_owner() const {
+	MutexLock lock(shader_program_residency_owner_mutex);
+	return shader_program_residency_owner;
+}
+
+uint32_t Engine::get_shader_resident_program_count() const {
+	return shader_resident_program_count.get();
+}
+
+void Engine::notify_shader_program_retained() {
+	shader_resident_program_count.increment();
+}
+
+void Engine::notify_shader_program_released() {
+	ERR_FAIL_COND(shader_resident_program_count.get() == 0);
+	shader_resident_program_count.decrement();
+}
+
+uint64_t Engine::record_shader_compilation_event(const ShaderCompilationEvent &p_event) {
+	if (!shader_compilation_tracking_enabled.is_set()) {
+		return 0;
+	}
+
+	ShaderCompilationEvent event = p_event;
+	if (event.compilation_id == 0) {
+		event.compilation_id = shader_compilation_sequence.increment();
+	}
+
+	MutexLock lock(shader_compilation_events_mutex);
+	if (shader_compilation_events.size() >= MAX_QUEUED_SHADER_COMPILATION_EVENTS) {
+		shader_compilation_events.remove(0);
+	}
+	shader_compilation_events.push_back(event);
+	return event.compilation_id;
+}
+
+Array Engine::drain_shader_compilation_events() {
+	Array result;
+	MutexLock lock(shader_compilation_events_mutex);
+	result.resize(shader_compilation_events.size());
+	for (int i = 0; i < shader_compilation_events.size(); i++) {
+		const ShaderCompilationEvent &event = shader_compilation_events[i];
+		Dictionary item;
+		item["compilation_id"] = event.compilation_id;
+		item["timestamp_usec"] = event.timestamp_usec;
+		item["duration_usec"] = event.duration_usec;
+		item["idle_frame"] = event.idle_frame;
+		item["render_frame"] = event.render_frame;
+		item["variant"] = event.variant;
+		item["custom_code_id"] = event.custom_code_id;
+		item["custom_code_version"] = event.custom_code_version;
+		item["phase"] = event.phase;
+		item["operation"] = event.operation;
+		item["backend"] = event.backend;
+		item["compilation_mode"] = event.compilation_mode;
+		item["source"] = event.source;
+		item["shader_name"] = event.shader_name;
+		item["material_path"] = event.material_path;
+		item["debug_target"] = event.debug_target;
+		item["cache_eligible"] = event.cache_eligible;
+		item["cache_lookup_attempted"] = event.cache_lookup_attempted;
+		item["cache_hit"] = event.cache_hit;
+		item["resident_program_hit"] = event.resident_program_hit;
+		item["program_cache_key"] = event.program_cache_key;
+		item["vertex_source_hash"] = event.vertex_source_hash;
+		item["fragment_source_hash"] = event.fragment_source_hash;
+		Array enabled_conditionals;
+		for (int j = 0; j < event.enabled_conditionals.size(); j++) {
+			enabled_conditionals.push_back(event.enabled_conditionals[j]);
+		}
+		item["enabled_conditionals"] = enabled_conditionals;
+		Array custom_defines;
+		for (int j = 0; j < event.custom_defines.size(); j++) {
+			custom_defines.push_back(event.custom_defines[j]);
+		}
+		item["custom_defines"] = custom_defines;
+		if (!event.generated_vertex_source.empty()) {
+			item["generated_vertex_source"] = event.generated_vertex_source;
+		}
+		if (!event.generated_fragment_source.empty()) {
+			item["generated_fragment_source"] = event.generated_fragment_source;
+		}
+		item["success"] = event.success;
+		result[i] = item;
+	}
+	shader_compilation_events.clear();
+	return result;
+}
+
+void Engine::clear_shader_compilation_events() {
+	MutexLock lock(shader_compilation_events_mutex);
+	shader_compilation_events.clear();
+}
+
+void Engine::set_shader_compilation_debug_targets(const PoolStringArray &p_targets) {
+	Vector<String> normalized_targets;
+	PoolStringArray::Read targets = p_targets.read();
+	for (int i = 0; i < p_targets.size(); i++) {
+		String target = targets[i].strip_edges().replace("\\", "/");
+		if (!target.empty() && normalized_targets.find(target) == -1) {
+			normalized_targets.push_back(target);
+		}
+	}
+
+	MutexLock lock(shader_compilation_debug_targets_mutex);
+	shader_compilation_debug_targets = normalized_targets;
+}
+
+PoolStringArray Engine::get_shader_compilation_debug_targets() const {
+	PoolStringArray result;
+	MutexLock lock(shader_compilation_debug_targets_mutex);
+	for (int i = 0; i < shader_compilation_debug_targets.size(); i++) {
+		result.push_back(shader_compilation_debug_targets[i]);
+	}
+	return result;
+}
+
+bool Engine::is_shader_compilation_debug_target(const String &p_material_path) const {
+	String material_path = p_material_path.replace("\\", "/");
+	String material_file = material_path.get_file().get_slice("::", 0);
+
+	MutexLock lock(shader_compilation_debug_targets_mutex);
+	for (int i = 0; i < shader_compilation_debug_targets.size(); i++) {
+		const String &target = shader_compilation_debug_targets[i];
+		if (material_path == target || material_path.begins_with(target + "::")) {
+			return true;
+		}
+		if (target.find("/") == -1 && material_file == target) {
+			return true;
+		}
+	}
+	return false;
+}
+
 void Engine::add_singleton(const Singleton &p_singleton) {
 	singletons.push_back(p_singleton);
 	singleton_ptrs[p_singleton.name] = p_singleton.ptr;
@@ -235,6 +414,11 @@ Engine::Engine() {
 	_frame_ticks = 0;
 	_frame_step = 0;
 	editor_hint = false;
+	shader_compilation_tracking_enabled.clear();
+	shader_compilation_sequence.set(0);
+	shader_program_residency_enabled.clear();
+	shader_resident_program_count.set(0);
+	shader_program_residency_owner = String();
 	_portals_active = false;
 	_occlusion_culling_active = false;
 }
