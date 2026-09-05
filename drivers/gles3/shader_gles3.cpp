@@ -703,7 +703,8 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	v.diagnostic_custom_defines.clear();
 	v.diagnostic_operation = String();
 	v.resident_program_key = String();
-	v.diagnostic_debug_target = Engine::get_singleton()->is_shader_compilation_debug_target(diagnostic_material_path);
+	const bool tracking_enabled = Engine::get_singleton()->is_shader_compilation_tracking_enabled();
+	v.diagnostic_debug_target = tracking_enabled && Engine::get_singleton()->is_shader_compilation_debug_target(diagnostic_material_path);
 	v.diagnostic_cache_eligible = effective_version.is_subject_to_caching();
 	v.diagnostic_cache_lookup_attempted = false;
 	v.diagnostic_cache_hit = false;
@@ -742,7 +743,9 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	bool build_ubershader = get_ubershader_flags_uniform() != -1 && (effective_version.version & VersionKey::UBERSHADER_FLAG);
 	if (build_ubershader) {
 		strings_common.push_back("#define IS_UBERSHADER\n");
-		v.diagnostic_enabled_conditionals.push_back("IS_UBERSHADER");
+		if (tracking_enabled) {
+			v.diagnostic_enabled_conditionals.push_back("IS_UBERSHADER");
+		}
 		for (int i = 0; i < conditional_count; i++) {
 			String s = vformat("#define FLAG_%s (1 << %d)\n", String(conditional_defines[i]).strip_edges().trim_prefix("#define "), i);
 			CharString cs = s.ascii();
@@ -754,7 +757,7 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 		for (int i = 0; i < conditional_count; i++) {
 			bool enable = ((1 << i) & effective_version.version);
 			strings_common.push_back(enable ? conditional_defines[i] : "");
-			if (enable) {
+			if (tracking_enabled && enable) {
 				v.diagnostic_enabled_conditionals.push_back(String(conditional_defines[i]).strip_edges().trim_prefix("#define ").strip_edges());
 			}
 
@@ -1307,6 +1310,7 @@ void ShaderGLES3::_retain_resident_program(Version *p_version) {
 			glDeleteShader(p_version->ids.frag);
 			glDeleteProgram(p_version->ids.main);
 			p_version->ids = resident->ids;
+			p_version->uniforms_ready = false;
 		}
 		return;
 	}
@@ -1322,7 +1326,7 @@ uint32_t ShaderGLES3::_evict_resident_program(const String &p_program_key) {
 	ResidentProgram *resident = resident_programs.getptr(p_program_key);
 	ERR_FAIL_NULL_V(resident, 0);
 
-	if (version && version->resident_program_key == p_program_key) {
+	if (version && version->resident_program_key == p_program_key && version->ids.main == resident->ids.main) {
 		if (active == this) {
 			unbind();
 		} else {
@@ -1334,7 +1338,8 @@ uint32_t ShaderGLES3::_evict_resident_program(const String &p_program_key) {
 	const VersionKey *version_key = nullptr;
 	while ((version_key = version_map.next(version_key))) {
 		const Version &candidate = version_map[*version_key];
-		if (candidate.resident_program_key == p_program_key) {
+		// Matching sources can still have a separate program compiling on the worker.
+		if (candidate.resident_program_key == p_program_key && candidate.ids.main == resident->ids.main) {
 			versions_to_remove.push_back(*version_key);
 		}
 	}
@@ -1696,10 +1701,7 @@ Dictionary ShaderGLES3::precompile_custom_shader_variant(uint32_t p_code_id, con
 	Version *compiled_version = version;
 	const bool success = bound && compiled_version && compiled_version->compile_status == Version::COMPILE_STATUS_OK;
 	if (success) {
-		ResidentProgram *resident = resident_programs.getptr(compiled_version->resident_program_key);
-		if (resident) {
-			_claim_resident_program(resident);
-		}
+		_retain_resident_program(compiled_version);
 	}
 	result["success"] = success;
 	result["already_compiled"] = already_compiled;
