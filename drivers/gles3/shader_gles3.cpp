@@ -284,6 +284,8 @@ void ShaderGLES3::_diagnostic_start(Version *p_version, const String &p_operatio
 	event.variant = p_version->version_key.version;
 	event.custom_code_id = p_version->version_key.code_version;
 	event.custom_code_version = p_version->diagnostic_custom_code_version;
+	event.material_rid = p_version->diagnostic_material_rid;
+	event.object_id = p_version->diagnostic_object_id;
 	event.phase = "started";
 	event.operation = p_operation;
 	event.backend = "gles3";
@@ -291,6 +293,7 @@ void ShaderGLES3::_diagnostic_start(Version *p_version, const String &p_operatio
 	event.source = _diagnostic_source(p_version);
 	event.shader_name = get_shader_name();
 	event.material_path = p_version->diagnostic_material_path;
+	event.custom_code_hash = p_version->diagnostic_custom_code_hash;
 	event.debug_target = p_version->diagnostic_debug_target;
 	event.cache_eligible = p_version->diagnostic_cache_eligible;
 	event.cache_lookup_attempted = p_version->diagnostic_cache_lookup_attempted;
@@ -330,6 +333,8 @@ void ShaderGLES3::_diagnostic_finish(Version *p_version, bool p_success) {
 	event.variant = p_version->version_key.version;
 	event.custom_code_id = p_version->version_key.code_version;
 	event.custom_code_version = p_version->diagnostic_custom_code_version;
+	event.material_rid = p_version->diagnostic_material_rid;
+	event.object_id = p_version->diagnostic_object_id;
 	event.phase = "finished";
 	event.operation = p_version->diagnostic_operation;
 	event.backend = "gles3";
@@ -337,6 +342,7 @@ void ShaderGLES3::_diagnostic_finish(Version *p_version, bool p_success) {
 	event.source = _diagnostic_source(p_version);
 	event.shader_name = get_shader_name();
 	event.material_path = p_version->diagnostic_material_path;
+	event.custom_code_hash = p_version->diagnostic_custom_code_hash;
 	event.debug_target = p_version->diagnostic_debug_target;
 	event.cache_eligible = p_version->diagnostic_cache_eligible;
 	event.cache_lookup_attempted = p_version->diagnostic_cache_lookup_attempted;
@@ -693,7 +699,10 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	v.diagnostic_compilation_id = 0;
 	v.diagnostic_started_usec = 0;
 	v.diagnostic_material_path = diagnostic_material_path;
+	v.diagnostic_material_rid = diagnostic_material_rid;
+	v.diagnostic_object_id = diagnostic_object_id;
 	v.diagnostic_custom_code_version = 0;
+	v.diagnostic_custom_code_hash = String();
 	v.diagnostic_program_cache_key = String();
 	v.diagnostic_vertex_source_hash = String();
 	v.diagnostic_fragment_source_hash = String();
@@ -792,6 +801,20 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 		}
 	}
 	v.diagnostic_custom_code_version = v.code_version;
+	if (tracking_enabled) {
+		String custom_code_identity = get_shader_name() + "\n";
+		if (cc) {
+			custom_code_identity += cc->vertex + "\n--vertex-globals--\n" + cc->vertex_globals;
+			custom_code_identity += "\n--fragment--\n" + cc->fragment + "\n--fragment-globals--\n" + cc->fragment_globals;
+			custom_code_identity += "\n--light--\n" + cc->light + "\n--uniforms--\n" + cc->uniforms;
+			for (int i = 0; i < cc->custom_defines.size(); i++) {
+				custom_code_identity += "\n--define--\n" + String(cc->custom_defines[i]);
+			}
+		} else {
+			custom_code_identity += "<built-in>";
+		}
+		v.diagnostic_custom_code_hash = custom_code_identity.sha256_text();
+	}
 
 	// To create the ubershader we need to modify the static strings;
 	// they'll go in this array
@@ -1617,14 +1640,18 @@ void ShaderGLES3::set_custom_shader_code(uint32_t p_code_id, const String &p_ver
 	if (p_async_mode == ASYNC_MODE_VISIBLE && is_async_compilation_supported() && get_ubershader_flags_uniform() != -1) {
 		// Warm up the ubershader for this custom code
 		diagnostic_material_path = String();
+		diagnostic_material_rid = 0;
+		diagnostic_object_id = 0;
 		new_conditional_version.code_version = p_code_id;
 		_bind_ubershader(true);
 	}
 }
 
-void ShaderGLES3::set_custom_shader(uint32_t p_code_id, const String &p_material_path) {
+void ShaderGLES3::set_custom_shader(uint32_t p_code_id, const String &p_material_path, uint32_t p_material_rid, uint32_t p_object_id) {
 	new_conditional_version.code_version = p_code_id;
 	diagnostic_material_path = p_material_path;
+	diagnostic_material_rid = p_material_rid;
+	diagnostic_object_id = p_object_id;
 }
 
 static String _shader_conditional_name(const char *p_define) {
@@ -1691,11 +1718,15 @@ Dictionary ShaderGLES3::precompile_custom_shader_variant(uint32_t p_code_id, con
 
 	const VersionKey previous_requested_version = new_conditional_version;
 	const String previous_material_path = diagnostic_material_path;
+	const uint32_t previous_material_rid = diagnostic_material_rid;
+	const uint32_t previous_object_id = diagnostic_object_id;
 	if (active) {
 		active->unbind();
 	}
 	new_conditional_version = requested_key;
 	diagnostic_material_path = p_material_path;
+	diagnostic_material_rid = 0;
+	diagnostic_object_id = 0;
 	const bool bound = _bind(true);
 
 	Version *compiled_version = version;
@@ -1718,6 +1749,8 @@ Dictionary ShaderGLES3::precompile_custom_shader_variant(uint32_t p_code_id, con
 	unbind();
 	new_conditional_version = previous_requested_version;
 	diagnostic_material_path = previous_material_path;
+	diagnostic_material_rid = previous_material_rid;
+	diagnostic_object_id = previous_object_id;
 	return result;
 }
 
@@ -1752,6 +1785,8 @@ ShaderGLES3::ShaderGLES3() {
 	version = nullptr;
 	last_custom_code = 1;
 	base_material_tex_index = 0;
+	diagnostic_material_rid = 0;
+	diagnostic_object_id = 0;
 }
 
 ShaderGLES3::~ShaderGLES3() {

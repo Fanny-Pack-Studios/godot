@@ -181,7 +181,10 @@ private:
 		uint64_t diagnostic_compilation_id;
 		uint64_t diagnostic_started_usec;
 		String diagnostic_material_path;
+		uint32_t diagnostic_material_rid;
+		uint32_t diagnostic_object_id;
 		uint32_t diagnostic_custom_code_version;
+		String diagnostic_custom_code_hash;
 		String diagnostic_program_cache_key;
 		String diagnostic_vertex_source_hash;
 		String diagnostic_fragment_source_hash;
@@ -241,6 +244,8 @@ private:
 				last_frame_processed(UINT64_MAX),
 				diagnostic_compilation_id(0),
 				diagnostic_started_usec(0),
+				diagnostic_material_rid(0),
+				diagnostic_object_id(0),
 				diagnostic_custom_code_version(0),
 				diagnostic_debug_target(false),
 				diagnostic_cache_eligible(false),
@@ -278,6 +283,8 @@ private:
 	HashMap<uint32_t, CustomCode> custom_code_map;
 	uint32_t last_custom_code;
 	String diagnostic_material_path;
+	uint32_t diagnostic_material_rid;
+	uint32_t diagnostic_object_id;
 
 	VersionKey conditional_version;
 	VersionKey new_conditional_version;
@@ -448,7 +455,7 @@ public:
 
 	uint32_t create_custom_shader();
 	void set_custom_shader_code(uint32_t p_code_id, const String &p_vertex, const String &p_vertex_globals, const String &p_fragment, const String &p_light, const String &p_fragment_globals, const String &p_uniforms, const Vector<StringName> &p_texture_uniforms, const Vector<CharString> &p_custom_defines, AsyncMode p_async_mode);
-	void set_custom_shader(uint32_t p_code_id, const String &p_material_path = String());
+	void set_custom_shader(uint32_t p_code_id, const String &p_material_path = String(), uint32_t p_material_rid = 0, uint32_t p_object_id = 0);
 	Dictionary precompile_custom_shader_variant(uint32_t p_code_id, const PoolStringArray &p_enabled_conditionals, const String &p_material_path = String());
 	Dictionary release_resident_program_owner(const String &p_owner);
 	String get_public_shader_name() const { return get_shader_name(); }

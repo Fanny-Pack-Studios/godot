@@ -1091,7 +1091,7 @@ void RasterizerSceneGLES3::gi_probe_instance_set_bounds(RID p_probe, const Vecto
 ////////////////////////////
 ////////////////////////////
 
-bool RasterizerSceneGLES3::_setup_material(RasterizerStorageGLES3::Material *p_material, bool p_depth_pass, bool p_alpha_pass) {
+bool RasterizerSceneGLES3::_setup_material(RasterizerStorageGLES3::Material *p_material, bool p_depth_pass, bool p_alpha_pass, uint32_t p_object_id) {
 	/* this is handled outside
 	if (p_material->shader->spatial.cull_mode == RasterizerStorageGLES3::Shader::Spatial::CULL_MODE_DISABLED) {
 		glDisable(GL_CULL_FACE);
@@ -1144,7 +1144,7 @@ bool RasterizerSceneGLES3::_setup_material(RasterizerStorageGLES3::Material *p_m
 
 	//material parameters
 
-	state.scene_shader.set_custom_shader(p_material->shader->custom_code_id, p_material->path);
+	state.scene_shader.set_custom_shader(p_material->shader->custom_code_id, p_material->path, p_material->get_id(), p_object_id);
 	bool rebind = state.scene_shader.bind();
 	if (!ShaderGLES3::get_active()) {
 		return false;
@@ -2208,7 +2208,8 @@ void RasterizerSceneGLES3::_render_list(RenderList::Element **p_elements, int p_
 		if (material != prev_material || rebind) {
 			storage->info.render.material_switch_count++;
 
-			rebind = _setup_material(material, use_opaque_prepass, p_alpha_pass);
+			VisualServerScene::Instance *visual_instance = (VisualServerScene::Instance *)(e->instance);
+			rebind = _setup_material(material, use_opaque_prepass, p_alpha_pass, visual_instance->object_id);
 
 			if (rebind) {
 				storage->info.render.shader_rebind_count++;

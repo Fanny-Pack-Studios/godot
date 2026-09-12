@@ -150,6 +150,13 @@ Ref<Resource> Resource::duplicate_for_local_scene(Node *p_for_scene, Map<Ref<Res
 	ERR_FAIL_COND_V(r.is_null(), Ref<Resource>());
 
 	r->local_scene = p_for_scene;
+	if (!get_path().empty() && is_class("Material")) {
+		// Local-to-scene copies intentionally have no resource path, because they
+		// are independent runtime resources. Keep their serialized origin as
+		// runtime-only metadata so diagnostics can still attribute work to the
+		// loadable source resource.
+		r->set_meta("_local_scene_source_path", get_path());
+	}
 
 	for (List<PropertyInfo>::Element *E = plist.front(); E; E = E->next()) {
 		if (!(E->get().usage & PROPERTY_USAGE_STORAGE)) {
