@@ -33,6 +33,7 @@
 #include "core/core_string_names.h"
 #include "core/engine.h"
 #include "core/io/resource_loader.h"
+#include "core/os/os.h"
 #include "core/project_settings.h"
 #include "editor/editor_inspector.h"
 #include "scene/2d/node_2d.h"
@@ -72,6 +73,9 @@ static Array _sanitize_node_pinned_properties(Node *p_node) {
 }
 
 Node *SceneState::instance(GenEditState p_edit_state) const {
+	Engine *engine = Engine::get_singleton();
+	const bool diagnostics_enabled = engine->is_texture_diagnostics_tracking_enabled();
+	const uint64_t scene_started_usec = diagnostics_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
 	// nodes where instancing failed (because something is missing)
 	List<Node *> stray_instances;
 
@@ -109,9 +113,12 @@ Node *SceneState::instance(GenEditState p_edit_state) const {
 	bool gen_node_path_cache = p_edit_state != GEN_EDIT_STATE_DISABLED && node_path_cache.empty();
 
 	Map<Ref<Resource>, Ref<Resource>> resources_local_to_scene;
+	int total_node_property_count = 0;
 
 	for (int i = 0; i < nc; i++) {
+		const uint64_t node_started_usec = diagnostics_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
 		const NodeData &n = nd[i];
+		total_node_property_count += n.properties.size();
 
 		Node *parent = nullptr;
 		String old_parent_path;
@@ -336,10 +343,38 @@ Node *SceneState::instance(GenEditState p_edit_state) const {
 			NodePath n2 = ret_nodes[0]->get_path_to(node);
 			node_path_cache[n2] = i;
 		}
+		if (diagnostics_enabled && node && ret_nodes[0]) {
+			const uint64_t node_finished_usec = OS::get_singleton()->get_ticks_usec();
+			if (node_finished_usec - node_started_usec >= 50) {
+				Engine::SceneDiagnosticsEvent event;
+				event.started_usec = node_started_usec;
+				event.finished_usec = node_finished_usec;
+				event.operation = "packed_scene_node_instance";
+				event.scene_path = get_path();
+				event.node_path = String(ret_nodes[0]->get_path_to(node));
+				event.node_class = node->get_class();
+				event.property_count = n.properties.size();
+				Ref<Script> script = node->get_script();
+				if (script.is_valid()) {
+					event.script_path = script->get_path();
+				}
+				engine->record_scene_diagnostics_event(event);
+			}
+		}
 	}
 
+	const uint64_t local_resources_started_usec = diagnostics_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
 	for (Map<Ref<Resource>, Ref<Resource>>::Element *E = resources_local_to_scene.front(); E; E = E->next()) {
 		E->get()->setup_local_to_scene();
+	}
+	if (diagnostics_enabled && !resources_local_to_scene.empty()) {
+		Engine::SceneDiagnosticsEvent event;
+		event.started_usec = local_resources_started_usec;
+		event.finished_usec = OS::get_singleton()->get_ticks_usec();
+		event.operation = "packed_scene_local_resource_setup";
+		event.scene_path = get_path();
+		event.property_count = resources_local_to_scene.size();
+		engine->record_scene_diagnostics_event(event);
 	}
 
 	//do connections
@@ -385,6 +420,16 @@ Node *SceneState::instance(GenEditState p_edit_state) const {
 		}
 	}
 
+	if (diagnostics_enabled) {
+		Engine::SceneDiagnosticsEvent event;
+		event.started_usec = scene_started_usec;
+		event.finished_usec = OS::get_singleton()->get_ticks_usec();
+		event.operation = "packed_scene_instance";
+		event.scene_path = get_path();
+		event.node_count = nc;
+		event.property_count = total_node_property_count;
+		engine->record_scene_diagnostics_event(event);
+	}
 	return ret_nodes[0];
 }
 

@@ -31,8 +31,10 @@
 #include "node.h"
 
 #include "core/core_string_names.h"
+#include "core/engine.h"
 #include "core/io/resource_loader.h"
 #include "core/message_queue.h"
+#include "core/os/os.h"
 #include "core/print_string.h"
 #include "instance_placeholder.h"
 #include "scene/animation/scene_tree_tween.h"
@@ -48,6 +50,23 @@ VARIANT_ENUM_CAST(Node::PauseMode);
 VARIANT_ENUM_CAST(Node::PhysicsInterpolationMode);
 
 int Node::orphan_node_count = 0;
+
+static void _record_node_scene_diagnostics(Node *p_node, const String &p_operation, uint64_t p_started_usec, uint64_t p_finished_usec) {
+	if (p_finished_usec - p_started_usec < 50) {
+		return;
+	}
+	Engine::SceneDiagnosticsEvent event;
+	event.started_usec = p_started_usec;
+	event.finished_usec = p_finished_usec;
+	event.operation = p_operation;
+	event.node_path = String(p_node->get_path());
+	event.node_class = p_node->get_class();
+	Ref<Script> script = p_node->get_script();
+	if (script.is_valid()) {
+		event.script_path = script->get_path();
+	}
+	Engine::get_singleton()->record_scene_diagnostics_event(event);
+}
 
 void Node::_notification(int p_notification) {
 	switch (p_notification) {
@@ -186,6 +205,9 @@ void Node::_propagate_ready() {
 		data.children.get_unchecked(i)->_propagate_ready();
 	}
 	data.blocked--;
+	Engine *engine = Engine::get_singleton();
+	const bool diagnostics_enabled = engine->is_texture_diagnostics_tracking_enabled();
+	const uint64_t ready_started_usec = diagnostics_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
 
 	notification(NOTIFICATION_POST_ENTER_TREE);
 
@@ -193,6 +215,9 @@ void Node::_propagate_ready() {
 		data.ready_first = false;
 		notification(NOTIFICATION_READY);
 		emit_signal(SceneStringNames::get_singleton()->ready);
+	}
+	if (diagnostics_enabled) {
+		_record_node_scene_diagnostics(this, "node_ready_self", ready_started_usec, OS::get_singleton()->get_ticks_usec());
 	}
 }
 
@@ -243,6 +268,9 @@ void Node::_propagate_physics_interpolation_reset_requested(bool p_requested) {
 void Node::_propagate_enter_tree() {
 	// this needs to happen to all children before any enter_tree
 
+	Engine *engine = Engine::get_singleton();
+	const bool diagnostics_enabled = engine->is_texture_diagnostics_tracking_enabled();
+	const uint64_t enter_started_usec = diagnostics_enabled ? OS::get_singleton()->get_ticks_usec() : 0;
 	if (data.parent) {
 		data.tree = data.parent->data.tree;
 		data.depth = data.parent->data.depth + 1;
@@ -275,6 +303,9 @@ void Node::_propagate_enter_tree() {
 		Variant c = this;
 		const Variant *cptr = &c;
 		data.parent->emit_signal(SceneStringNames::get_singleton()->child_entered_tree, &cptr, 1);
+	}
+	if (diagnostics_enabled) {
+		_record_node_scene_diagnostics(this, "node_enter_tree_self", enter_started_usec, OS::get_singleton()->get_ticks_usec());
 	}
 
 	data.blocked++;

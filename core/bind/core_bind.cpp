@@ -3314,6 +3314,38 @@ PoolStringArray _Engine::get_shader_compilation_debug_targets() const {
 	return Engine::get_singleton()->get_shader_compilation_debug_targets();
 }
 
+void _Engine::set_texture_diagnostics_tracking_enabled(bool p_enabled) {
+	Engine::get_singleton()->set_texture_diagnostics_tracking_enabled(p_enabled);
+}
+
+bool _Engine::is_texture_diagnostics_tracking_enabled() const {
+	return Engine::get_singleton()->is_texture_diagnostics_tracking_enabled();
+}
+
+Array _Engine::drain_texture_diagnostics_events() {
+	return Engine::get_singleton()->drain_texture_diagnostics_events();
+}
+
+void _Engine::clear_texture_diagnostics_events() {
+	Engine::get_singleton()->clear_texture_diagnostics_events();
+}
+
+Array _Engine::drain_frame_diagnostics_events() {
+	return Engine::get_singleton()->drain_frame_diagnostics_events();
+}
+
+void _Engine::clear_frame_diagnostics_events() {
+	Engine::get_singleton()->clear_frame_diagnostics_events();
+}
+
+Array _Engine::drain_scene_diagnostics_events() {
+	return Engine::get_singleton()->drain_scene_diagnostics_events();
+}
+
+void _Engine::clear_scene_diagnostics_events() {
+	Engine::get_singleton()->clear_scene_diagnostics_events();
+}
+
 void _Engine::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_iterations_per_second", "iterations_per_second"), &_Engine::set_iterations_per_second);
 	ClassDB::bind_method(D_METHOD("get_iterations_per_second"), &_Engine::get_iterations_per_second);
@@ -3362,6 +3394,14 @@ void _Engine::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("clear_shader_compilation_events"), &_Engine::clear_shader_compilation_events);
 	ClassDB::bind_method(D_METHOD("set_shader_compilation_debug_targets", "targets"), &_Engine::set_shader_compilation_debug_targets);
 	ClassDB::bind_method(D_METHOD("get_shader_compilation_debug_targets"), &_Engine::get_shader_compilation_debug_targets);
+	ClassDB::bind_method(D_METHOD("set_texture_diagnostics_tracking_enabled", "enabled"), &_Engine::set_texture_diagnostics_tracking_enabled);
+	ClassDB::bind_method(D_METHOD("is_texture_diagnostics_tracking_enabled"), &_Engine::is_texture_diagnostics_tracking_enabled);
+	ClassDB::bind_method(D_METHOD("drain_texture_diagnostics_events"), &_Engine::drain_texture_diagnostics_events);
+	ClassDB::bind_method(D_METHOD("clear_texture_diagnostics_events"), &_Engine::clear_texture_diagnostics_events);
+	ClassDB::bind_method(D_METHOD("drain_frame_diagnostics_events"), &_Engine::drain_frame_diagnostics_events);
+	ClassDB::bind_method(D_METHOD("clear_frame_diagnostics_events"), &_Engine::clear_frame_diagnostics_events);
+	ClassDB::bind_method(D_METHOD("drain_scene_diagnostics_events"), &_Engine::drain_scene_diagnostics_events);
+	ClassDB::bind_method(D_METHOD("clear_scene_diagnostics_events"), &_Engine::clear_scene_diagnostics_events);
 
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "editor_hint"), "set_editor_hint", "is_editor_hint");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "print_error_messages"), "set_print_error_messages", "is_printing_error_messages");

@@ -2380,7 +2380,13 @@ bool Main::iteration() {
 	double step = advance.idle_step;
 	double scaled_step = step * time_scale;
 
+	Engine *diagnostics_engine = Engine::get_singleton();
+	bool frame_diagnostics_tracking = diagnostics_engine->is_texture_diagnostics_tracking_enabled();
+	uint64_t diagnostics_phase_started = frame_diagnostics_tracking ? OS::get_singleton()->get_ticks_usec() : 0;
 	VisualServer::get_singleton()->sync_and_halt();
+	if (frame_diagnostics_tracking) {
+		diagnostics_engine->record_frame_diagnostics_event("main_visual_halt", diagnostics_phase_started, OS::get_singleton()->get_ticks_usec());
+	}
 
 	Engine::get_singleton()->_frame_step = step;
 	Engine::get_singleton()->_physics_interpolation_fraction = advance.interpolation_fraction;
@@ -2400,6 +2406,7 @@ bool Main::iteration() {
 
 	bool exit = false;
 
+	diagnostics_phase_started = frame_diagnostics_tracking ? OS::get_singleton()->get_ticks_usec() : 0;
 	for (int iters = 0; iters < advance.physics_steps; ++iters) {
 		if (InputDefault::get_singleton()->is_using_input_buffering() && agile_input_event_flushing) {
 			InputDefault::get_singleton()->flush_buffered_events();
@@ -2448,6 +2455,9 @@ bool Main::iteration() {
 
 		Engine::get_singleton()->_in_physics = false;
 	}
+	if (frame_diagnostics_tracking) {
+		diagnostics_engine->record_frame_diagnostics_event("main_physics", diagnostics_phase_started, OS::get_singleton()->get_ticks_usec());
+	}
 
 	VisualServer::get_singleton()->thaw();
 
@@ -2456,6 +2466,7 @@ bool Main::iteration() {
 	}
 
 	uint64_t idle_begin = OS::get_singleton()->get_ticks_usec();
+	diagnostics_phase_started = frame_diagnostics_tracking ? idle_begin : 0;
 
 	if (OS::get_singleton()->get_main_loop()->idle(step * time_scale)) {
 		exit = true;
@@ -2468,9 +2479,17 @@ bool Main::iteration() {
 	Viewport::flush_canvas_parents_dirty_order();
 
 	message_queue->flush();
+	if (frame_diagnostics_tracking) {
+		diagnostics_engine->record_frame_diagnostics_event("main_idle", diagnostics_phase_started, OS::get_singleton()->get_ticks_usec());
+	}
 
+	diagnostics_phase_started = frame_diagnostics_tracking ? OS::get_singleton()->get_ticks_usec() : 0;
 	VisualServer::get_singleton()->sync(); //sync if still drawing from previous frames.
+	if (frame_diagnostics_tracking) {
+		diagnostics_engine->record_frame_diagnostics_event("main_visual_sync", diagnostics_phase_started, OS::get_singleton()->get_ticks_usec());
+	}
 
+	diagnostics_phase_started = frame_diagnostics_tracking ? OS::get_singleton()->get_ticks_usec() : 0;
 	if (OS::get_singleton()->can_draw() && VisualServer::get_singleton()->is_render_loop_enabled()) {
 		if ((!force_redraw_requested) && OS::get_singleton()->is_in_low_processor_usage_mode()) {
 			// We can choose whether to redraw as a result of any redraw request, or redraw only for vital requests.
@@ -2491,6 +2510,9 @@ bool Main::iteration() {
 			Engine::get_singleton()->frames_drawn++;
 			force_redraw_requested = false;
 		}
+	}
+	if (frame_diagnostics_tracking) {
+		diagnostics_engine->record_frame_diagnostics_event("main_draw_submit", diagnostics_phase_started, OS::get_singleton()->get_ticks_usec());
 	}
 
 #ifndef TOOLS_ENABLED
