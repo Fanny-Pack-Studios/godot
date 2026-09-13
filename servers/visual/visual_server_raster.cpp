@@ -213,6 +213,18 @@ Dictionary VisualServerRaster::shader_precompile_internal_variant(const String &
 	return VSG::rasterizer->shader_precompile_internal_variant(p_shader_name, p_enabled_conditionals);
 }
 
+Dictionary VisualServerRaster::shader_internal_compile_recipe(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals) {
+	return VSG::rasterizer->shader_internal_compile_recipe(p_shader_name, p_enabled_conditionals);
+}
+
+Dictionary VisualServerRaster::shader_poll_recipes() {
+	return VSG::rasterizer->shader_poll_recipes();
+}
+
+void VisualServerRaster::shader_set_recipe_workers(int p_worker_count) {
+	VSG::rasterizer->shader_set_recipe_workers(p_worker_count);
+}
+
 Dictionary VisualServerRaster::shader_release_resident_program_owner(const String &p_owner) {
 	return VSG::rasterizer->shader_release_resident_program_owner(p_owner);
 }

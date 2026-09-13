@@ -84,6 +84,11 @@ Dictionary Material::precompile_shader_variant(const PoolStringArray &p_enabled_
 	return VS::get_singleton()->material_precompile_shader_variant(material, p_enabled_conditionals);
 }
 
+Dictionary Material::precompile_recipe(const PoolStringArray &p_enabled_conditionals) {
+	_flush_shader_changes();
+	return VS::get_singleton()->material_precompile_recipe(material, p_enabled_conditionals);
+}
+
 void Material::_resource_path_changed() {
 	VS::get_singleton()->material_set_path(material, get_path());
 }
@@ -101,6 +106,7 @@ void Material::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_render_priority", "priority"), &Material::set_render_priority);
 	ClassDB::bind_method(D_METHOD("get_render_priority"), &Material::get_render_priority);
 	ClassDB::bind_method(D_METHOD("precompile_shader_variant", "enabled_conditionals"), &Material::precompile_shader_variant);
+	ClassDB::bind_method(D_METHOD("precompile_recipe", "enabled_conditionals"), &Material::precompile_recipe);
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "render_priority", PROPERTY_HINT_RANGE, itos(RENDER_PRIORITY_MIN) + "," + itos(RENDER_PRIORITY_MAX) + ",1"), "set_render_priority", "get_render_priority");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "next_pass", PROPERTY_HINT_RESOURCE_TYPE, "Material"), "set_next_pass", "get_next_pass");

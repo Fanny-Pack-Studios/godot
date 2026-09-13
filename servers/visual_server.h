@@ -50,6 +50,7 @@ class VisualServer : public Object {
 	bool render_loop_enabled = true;
 #ifdef DEBUG_ENABLED
 	bool force_shader_fallbacks = false;
+	bool shader_ubershaders_enabled = true;
 #endif
 
 	void _camera_set_orthogonal(RID p_camera, float p_size, float p_z_near, float p_z_far);
@@ -209,6 +210,9 @@ public:
 
 	virtual void set_shader_async_hidden_forbidden(bool p_forbidden) = 0;
 	virtual Dictionary shader_precompile_internal_variant(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals) = 0;
+	virtual Dictionary shader_internal_compile_recipe(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals) = 0;
+	virtual Dictionary shader_poll_recipes() = 0;
+	virtual void shader_set_recipe_workers(int p_worker_count) = 0;
 	virtual Dictionary shader_release_resident_program_owner(const String &p_owner) = 0;
 
 	/* COMMON MATERIAL API */
@@ -224,6 +228,7 @@ public:
 	virtual void material_set_shader(RID p_shader_material, RID p_shader) = 0;
 	virtual RID material_get_shader(RID p_shader_material) const = 0;
 	virtual Dictionary material_precompile_shader_variant(RID p_material, const PoolStringArray &p_enabled_conditionals) = 0;
+	virtual Dictionary material_precompile_recipe(RID p_material, const PoolStringArray &p_enabled_conditionals) = 0;
 
 	virtual void material_set_param(RID p_material, const StringName &p_param, const Variant &p_value) = 0;
 	virtual Variant material_get_param(RID p_material, const StringName &p_param) const = 0;
@@ -1263,6 +1268,8 @@ public:
 #ifdef DEBUG_ENABLED
 	bool is_force_shader_fallbacks_enabled() const;
 	void set_force_shader_fallbacks_enabled(bool p_enabled);
+	bool is_shader_ubershaders_enabled() const;
+	void set_shader_ubershaders_enabled(bool p_enabled);
 #endif
 
 	VisualServer();

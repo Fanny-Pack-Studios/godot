@@ -70,6 +70,25 @@ uint32_t *ShaderGLES3::compiles_started_this_frame;
 uint32_t *ShaderGLES3::max_frame_compiles_in_progress;
 uint32_t ShaderGLES3::max_simultaneous_compiles;
 uint32_t ShaderGLES3::active_compiles_count;
+ShaderCompileQueueGLES3 *ShaderGLES3::recipe_compile_queue = nullptr;
+
+Vector<ShaderGLES3::RecipeJob> ShaderGLES3::recipe_jobs;
+uint64_t ShaderGLES3::recipe_handle_sequence = 0;
+uint32_t ShaderGLES3::recipe_job_id_sequence = 0;
+
+// Concatenates a shader string array into a single null-terminated buffer for
+// compile jobs that run on another thread.
+static void concat_shader_strings(const LocalVector<const char *> &p_shader_strings, LocalVector<char> *r_out) {
+	r_out->clear();
+	for (uint32_t i = 0; i < p_shader_strings.size(); i++) {
+		uint32_t initial_size = r_out->size();
+		uint32_t piece_len = strlen(reinterpret_cast<const char *>(p_shader_strings[i]));
+		r_out->resize(initial_size + piece_len + 1);
+		memcpy(r_out->ptr() + initial_size, p_shader_strings[i], piece_len);
+		*(r_out->ptr() + initial_size + piece_len) = '\n';
+	}
+	*(r_out->ptr() + r_out->size() - 1) = '\0';
+}
 #ifdef DEBUG_ENABLED
 bool ShaderGLES3::log_active_async_compiles_count;
 #endif
@@ -450,7 +469,7 @@ bool ShaderGLES3::_process_program_state(Version *p_version, bool p_async_forbid
 				}
 				if (must_complete_now) {
 					bool must_save_to_cache = p_version->version_key.is_subject_to_caching() && p_version->program_binary.source != Version::ProgramBinary::SOURCE_CACHE && shader_cache;
-					bool ok = p_version->shader->_complete_compile(p_version->ids, must_save_to_cache);
+					bool ok = p_version->shader->_complete_compile(p_version->ids, must_save_to_cache, p_version->version_key.version);
 					if (ok) {
 						p_version->compile_status = Version::COMPILE_STATUS_LINKING;
 						run_next_step = p_async_forbidden;
@@ -712,79 +731,9 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	v.diagnostic_started = false;
 	v.diagnostic_finished = false;
 
-	/* SETUP CONDITIONALS */
-
-	LocalVector<const char *> strings_common;
-#ifdef GLES_OVER_GL
-	strings_common.push_back("#version 330\n");
-	strings_common.push_back("#define GLES_OVER_GL\n");
-#else
-	strings_common.push_back("#version 300 es\n");
-#endif
-
-#ifdef ANDROID_ENABLED
-	strings_common.push_back("#define ANDROID_ENABLED\n");
-#endif
-
-	for (int i = 0; i < custom_defines.size(); i++) {
-		strings_common.push_back(custom_defines[i].get_data());
-		strings_common.push_back("\n");
-		if (v.diagnostic_debug_target) {
-			v.diagnostic_custom_defines.push_back(String(custom_defines[i]).strip_edges());
-		}
-	}
-
-	if (is_async_compilation_supported() && get_ubershader_flags_uniform() != -1) {
-		// Indicate that this shader may be used both as ubershader and conditioned during the session
-		strings_common.push_back("#define UBERSHADER_COMPAT\n");
-	}
-
-	LocalVector<CharString> flag_macros;
-	bool build_ubershader = get_ubershader_flags_uniform() != -1 && (effective_version.version & VersionKey::UBERSHADER_FLAG);
-	if (build_ubershader) {
-		strings_common.push_back("#define IS_UBERSHADER\n");
-		if (tracking_enabled) {
-			v.diagnostic_enabled_conditionals.push_back("IS_UBERSHADER");
-		}
-		for (int i = 0; i < conditional_count; i++) {
-			String s = vformat("#define FLAG_%s (1 << %d)\n", String(conditional_defines[i]).strip_edges().trim_prefix("#define "), i);
-			CharString cs = s.ascii();
-			flag_macros.push_back(cs);
-			strings_common.push_back(cs.ptr());
-		}
-		strings_common.push_back("\n");
-	} else {
-		for (int i = 0; i < conditional_count; i++) {
-			bool enable = ((1 << i) & effective_version.version);
-			strings_common.push_back(enable ? conditional_defines[i] : "");
-			if (tracking_enabled && enable) {
-				v.diagnostic_enabled_conditionals.push_back(String(conditional_defines[i]).strip_edges().trim_prefix("#define ").strip_edges());
-			}
-
-			if (enable) {
-				DEBUG_PRINT(conditional_defines[i]);
-			}
-		}
-	}
-
-	//keep them around during the function
-	struct {
-		CharString code_string;
-		CharString code_globals;
-		CharString material_string;
-	} vert;
-	struct {
-		CharString code_string;
-		CharString code_string2;
-		CharString code_globals;
-		CharString material_string;
-	} frag;
-
 	if (effective_version.code_version != 0) {
-		ERR_FAIL_COND_V(!custom_code_map.has(effective_version.code_version), nullptr);
-		if (!cc) {
-			cc = &custom_code_map[effective_version.code_version];
-		}
+		cc = custom_code_map.getptr(effective_version.code_version);
+		ERR_FAIL_COND_V(!cc, nullptr);
 		if (cc->version != v.code_version) {
 			v.code_version = cc->version;
 			v.async_mode = cc->async_mode;
@@ -793,167 +742,16 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	}
 	v.diagnostic_custom_code_version = v.code_version;
 
-	// To create the ubershader we need to modify the static strings;
-	// they'll go in this array
-	LocalVector<CharString> filtered_strings;
-
-	/* VERTEX SHADER */
-
-	if (cc) {
-		for (int i = 0; i < cc->custom_defines.size(); i++) {
-			strings_common.push_back(cc->custom_defines[i].get_data());
-			if (v.diagnostic_debug_target) {
-				v.diagnostic_custom_defines.push_back(String(cc->custom_defines[i]).strip_edges());
-			}
-			DEBUG_PRINT("CD #" + itos(i) + ": " + String(cc->custom_defines[i]));
-		}
+	CompileSourceBuild src;
+	if (!build_compile_sources(effective_version, cc, tracking_enabled, v.diagnostic_debug_target, src)) {
+		return nullptr;
 	}
-
-	LocalVector<const char *> strings_vertex(strings_common);
-
-	//vertex precision is high
-	strings_vertex.push_back("precision highp float;\n");
-	strings_vertex.push_back("precision highp int;\n");
-#ifndef GLES_OVER_GL
-	strings_vertex.push_back("precision highp sampler2D;\n");
-	strings_vertex.push_back("precision highp samplerCube;\n");
-	strings_vertex.push_back("precision highp sampler2DArray;\n");
-#endif
-
-	if (build_ubershader) {
-		CharString s = _prepare_ubershader_chunk(vertex_code0);
-		filtered_strings.push_back(s);
-		strings_vertex.push_back(s.get_data());
-	} else {
-		strings_vertex.push_back(vertex_code0.get_data());
+	if (tracking_enabled) {
+		v.diagnostic_enabled_conditionals = src.diagnostic_enabled_conditionals;
 	}
-
-	if (cc) {
-		vert.material_string = cc->uniforms.ascii();
-		strings_vertex.push_back(vert.material_string.get_data());
+	if (v.diagnostic_debug_target) {
+		v.diagnostic_custom_defines = src.diagnostic_custom_defines;
 	}
-
-	if (build_ubershader) {
-		CharString s = _prepare_ubershader_chunk(vertex_code1);
-		filtered_strings.push_back(s);
-		strings_vertex.push_back(s.get_data());
-	} else {
-		strings_vertex.push_back(vertex_code1.get_data());
-	}
-
-	if (cc) {
-		vert.code_globals = cc->vertex_globals.ascii();
-		strings_vertex.push_back(vert.code_globals.get_data());
-	}
-
-	if (build_ubershader) {
-		CharString s = _prepare_ubershader_chunk(vertex_code2);
-		filtered_strings.push_back(s);
-		strings_vertex.push_back(s.get_data());
-	} else {
-		strings_vertex.push_back(vertex_code2.get_data());
-	}
-
-	if (cc) {
-		vert.code_string = cc->vertex.ascii();
-		strings_vertex.push_back(vert.code_string.get_data());
-	}
-
-	if (build_ubershader) {
-		CharString s = _prepare_ubershader_chunk(vertex_code3);
-		filtered_strings.push_back(s);
-		strings_vertex.push_back(s.get_data());
-	} else {
-		strings_vertex.push_back(vertex_code3.get_data());
-	}
-
-#ifdef DEBUG_SHADER
-	DEBUG_PRINT("\nVertex Code:\n\n" + String(code_string.get_data()));
-	for (int i = 0; i < strings_vertex.size(); i++) {
-		//print_line("vert strings "+itos(i)+":"+String(strings_vertex[i]));
-	}
-#endif
-
-	/* FRAGMENT SHADER */
-
-	LocalVector<const char *> strings_fragment(strings_common);
-
-	//fragment precision is medium
-	strings_fragment.push_back("precision highp float;\n");
-	strings_fragment.push_back("precision highp int;\n");
-#ifndef GLES_OVER_GL
-	strings_fragment.push_back("precision highp sampler2D;\n");
-	strings_fragment.push_back("precision highp samplerCube;\n");
-	strings_fragment.push_back("precision highp sampler2DArray;\n");
-#endif
-
-	if (build_ubershader) {
-		CharString s = _prepare_ubershader_chunk(fragment_code0);
-		filtered_strings.push_back(s);
-		strings_fragment.push_back(s.get_data());
-	} else {
-		strings_fragment.push_back(fragment_code0.get_data());
-	}
-
-	if (cc) {
-		frag.material_string = cc->uniforms.ascii();
-		strings_fragment.push_back(frag.material_string.get_data());
-	}
-
-	if (build_ubershader) {
-		CharString s = _prepare_ubershader_chunk(fragment_code1);
-		filtered_strings.push_back(s);
-		strings_fragment.push_back(s.get_data());
-	} else {
-		strings_fragment.push_back(fragment_code1.get_data());
-	}
-
-	if (cc) {
-		frag.code_globals = cc->fragment_globals.ascii();
-		strings_fragment.push_back(frag.code_globals.get_data());
-	}
-
-	if (build_ubershader) {
-		CharString s = _prepare_ubershader_chunk(fragment_code2);
-		filtered_strings.push_back(s);
-		strings_fragment.push_back(s.get_data());
-	} else {
-		strings_fragment.push_back(fragment_code2.get_data());
-	}
-
-	if (cc) {
-		frag.code_string = cc->light.ascii();
-		strings_fragment.push_back(frag.code_string.get_data());
-	}
-
-	if (build_ubershader) {
-		CharString s = _prepare_ubershader_chunk(fragment_code3);
-		filtered_strings.push_back(s);
-		strings_fragment.push_back(s.get_data());
-	} else {
-		strings_fragment.push_back(fragment_code3.get_data());
-	}
-
-	if (cc) {
-		frag.code_string2 = cc->fragment.ascii();
-		strings_fragment.push_back(frag.code_string2.get_data());
-	}
-
-	if (build_ubershader) {
-		CharString s = _prepare_ubershader_chunk(fragment_code4);
-		filtered_strings.push_back(s);
-		strings_fragment.push_back(s.get_data());
-	} else {
-		strings_fragment.push_back(fragment_code4.get_data());
-	}
-
-#ifdef DEBUG_SHADER
-	DEBUG_PRINT("\nFragment Globals:\n\n" + String(code_globals.get_data()));
-	DEBUG_PRINT("\nFragment Code:\n\n" + String(code_string2.get_data()));
-	for (int i = 0; i < strings_fragment.size(); i++) {
-		//print_line("frag strings "+itos(i)+":"+String(strings_fragment[i]));
-	}
-#endif
 
 	if (!r_async_forbidden) {
 		r_async_forbidden =
@@ -961,13 +759,7 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 				(v.async_mode == ASYNC_MODE_VISIBLE && get_ubershader_flags_uniform() == -1);
 	}
 
-	const char *strings_platform[] = {
-		reinterpret_cast<const char *>(glGetString(GL_VENDOR)),
-		reinterpret_cast<const char *>(glGetString(GL_RENDERER)),
-		reinterpret_cast<const char *>(glGetString(GL_VERSION)),
-		nullptr,
-	};
-	v.resident_program_key = ShaderCacheGLES3::hash_program(strings_platform, strings_vertex, strings_fragment);
+	v.resident_program_key = compute_resident_program_key(src);
 	if (v.diagnostic_cache_eligible || v.diagnostic_debug_target) {
 		v.program_binary.cache_hash = v.resident_program_key;
 		v.diagnostic_program_cache_key = v.program_binary.cache_hash;
@@ -975,11 +767,12 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	if (v.diagnostic_debug_target) {
 		const char *no_platform_strings[] = { nullptr };
 		LocalVector<const char *> no_shader_strings;
-		v.diagnostic_vertex_source_hash = ShaderCacheGLES3::hash_program(no_platform_strings, strings_vertex, no_shader_strings);
-		v.diagnostic_fragment_source_hash = ShaderCacheGLES3::hash_program(no_platform_strings, no_shader_strings, strings_fragment);
-		v.diagnostic_vertex_source = _join_shader_source(strings_vertex);
-		v.diagnostic_fragment_source = _join_shader_source(strings_fragment);
+		v.diagnostic_vertex_source_hash = ShaderCacheGLES3::hash_program(no_platform_strings, src.strings_vertex, no_shader_strings);
+		v.diagnostic_fragment_source_hash = ShaderCacheGLES3::hash_program(no_platform_strings, no_shader_strings, src.strings_fragment);
+		v.diagnostic_vertex_source = _join_shader_source(src.strings_vertex);
+		v.diagnostic_fragment_source = _join_shader_source(src.strings_fragment);
 	}
+
 	if (_reuse_resident_program(&v)) {
 		if (cc) {
 			cc->versions.insert(effective_version.version);
@@ -1011,22 +804,11 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 			//    We are doing it that way since GL drivers can implement context sharing via locking, which
 			//    would render (no pun intended) this whole effort to asynchronous useless.
 
-			auto concat_shader_strings = [](const LocalVector<const char *> &p_shader_strings, LocalVector<char> *r_out) {
-				r_out->clear();
-				for (uint32_t i = 0; i < p_shader_strings.size(); i++) {
-					uint32_t initial_size = r_out->size();
-					uint32_t piece_len = strlen(reinterpret_cast<const char *>(p_shader_strings[i]));
-					r_out->resize(initial_size + piece_len + 1);
-					memcpy(r_out->ptr() + initial_size, p_shader_strings[i], piece_len);
-					*(r_out->ptr() + initial_size + piece_len) = '\n';
-				}
-				*(r_out->ptr() + r_out->size() - 1) = '\0';
-			};
 
 			LocalVector<char> vertex_code;
-			concat_shader_strings(strings_vertex, &vertex_code);
+			concat_shader_strings(src.strings_vertex, &vertex_code);
 			LocalVector<char> fragment_code;
-			concat_shader_strings(strings_fragment, &fragment_code);
+			concat_shader_strings(src.strings_fragment, &fragment_code);
 
 			v.program_binary.source = Version::ProgramBinary::SOURCE_QUEUE;
 			v.compile_status = Version::COMPILE_STATUS_PROCESSING_AT_QUEUE;
@@ -1051,7 +833,7 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 				_set_source(async_ids, async_strings_vertex, async_strings_fragment);
 				glCompileShader(async_ids.vert);
 				glCompileShader(async_ids.frag);
-				if (_complete_compile(async_ids, true) && _complete_link(async_ids, &v.program_binary.format, &v.program_binary.data)) {
+				if (_complete_compile(async_ids, true, v.version_key.version) && _complete_link(async_ids, &v.program_binary.format, &v.program_binary.data)) {
 					glDeleteShader(async_ids.frag);
 					glDeleteShader(async_ids.vert);
 					glDeleteProgram(async_ids.main);
@@ -1064,7 +846,7 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 			// Synchronous compilation, or async. via native support
 			v.ids.vert = glCreateShader(GL_VERTEX_SHADER);
 			v.ids.frag = glCreateShader(GL_FRAGMENT_SHADER);
-			_set_source(v.ids, strings_vertex, strings_fragment);
+			_set_source(v.ids, src.strings_vertex, src.strings_fragment);
 			v.program_binary.source = Version::ProgramBinary::SOURCE_LOCAL;
 			v.compile_status = Version::COMPILE_STATUS_SOURCE_PROVIDED;
 		}
@@ -1077,12 +859,456 @@ ShaderGLES3::Version *ShaderGLES3::get_current_version(bool &r_async_forbidden) 
 	return &v;
 }
 
+bool ShaderGLES3::build_compile_sources(const VersionKey &p_key, const CustomCode *p_cc, bool p_track_conditionals, bool p_track_defines, CompileSourceBuild &r_out) const {
+	/* SETUP CONDITIONALS */
+
+	LocalVector<const char *> strings_common;
+#ifdef GLES_OVER_GL
+	strings_common.push_back("#version 330\n");
+	strings_common.push_back("#define GLES_OVER_GL\n");
+#else
+	strings_common.push_back("#version 300 es\n");
+#endif
+
+#ifdef ANDROID_ENABLED
+	strings_common.push_back("#define ANDROID_ENABLED\n");
+#endif
+
+	for (int i = 0; i < custom_defines.size(); i++) {
+		strings_common.push_back(custom_defines[i].get_data());
+		strings_common.push_back("\n");
+		if (p_track_defines) {
+			r_out.diagnostic_custom_defines.push_back(String(custom_defines[i]).strip_edges());
+		}
+	}
+
+	if (is_async_compilation_supported() && get_ubershader_flags_uniform() != -1) {
+		// Indicate that this shader may be used both as ubershader and conditioned during the session
+		strings_common.push_back("#define UBERSHADER_COMPAT\n");
+	}
+
+	LocalVector<CharString> flag_macros;
+	bool build_ubershader = get_ubershader_flags_uniform() != -1 && (p_key.version & VersionKey::UBERSHADER_FLAG);
+	if (build_ubershader) {
+		strings_common.push_back("#define IS_UBERSHADER\n");
+		if (p_track_conditionals) {
+			r_out.diagnostic_enabled_conditionals.push_back("IS_UBERSHADER");
+		}
+		for (int i = 0; i < conditional_count; i++) {
+			String s = vformat("#define FLAG_%s (1 << %d)\n", String(conditional_defines[i]).strip_edges().trim_prefix("#define "), i);
+			CharString cs = s.ascii();
+			flag_macros.push_back(cs);
+			strings_common.push_back(cs.ptr());
+		}
+		strings_common.push_back("\n");
+	} else {
+		for (int i = 0; i < conditional_count; i++) {
+			bool enable = ((1 << i) & p_key.version);
+			strings_common.push_back(enable ? conditional_defines[i] : "");
+			if (p_track_conditionals && enable) {
+				r_out.diagnostic_enabled_conditionals.push_back(String(conditional_defines[i]).strip_edges().trim_prefix("#define ").strip_edges());
+			}
+
+			if (enable) {
+				DEBUG_PRINT(conditional_defines[i]);
+			}
+		}
+	}
+
+
+
+	// Transient CharStrings (ubershader chunks, custom code strings) live in
+	// r_out.owned_strings so the string arrays stay valid after this returns.
+	List<CharString> &filtered_strings = r_out.owned_strings;
+
+	/* VERTEX SHADER */
+
+	if (p_cc) {
+		for (int i = 0; i < p_cc->custom_defines.size(); i++) {
+			strings_common.push_back(p_cc->custom_defines[i].get_data());
+			if (p_track_defines) {
+				r_out.diagnostic_custom_defines.push_back(String(p_cc->custom_defines[i]).strip_edges());
+			}
+			DEBUG_PRINT("CD #" + itos(i) + ": " + String(p_cc->custom_defines[i]));
+		}
+	}
+
+	LocalVector<const char *> strings_vertex(strings_common);
+
+	//vertex precision is high
+	strings_vertex.push_back("precision highp float;\n");
+	strings_vertex.push_back("precision highp int;\n");
+#ifndef GLES_OVER_GL
+	strings_vertex.push_back("precision highp sampler2D;\n");
+	strings_vertex.push_back("precision highp samplerCube;\n");
+	strings_vertex.push_back("precision highp sampler2DArray;\n");
+#endif
+
+	if (build_ubershader) {
+		filtered_strings.push_back(_prepare_ubershader_chunk(vertex_code0));
+		strings_vertex.push_back(filtered_strings.back()->get().get_data());
+	} else {
+		strings_vertex.push_back(vertex_code0.get_data());
+	}
+
+	if (p_cc) {
+		r_out.owned_strings.push_back(p_cc->uniforms.ascii());
+		strings_vertex.push_back(r_out.owned_strings.back()->get().get_data());
+	}
+
+	if (build_ubershader) {
+		filtered_strings.push_back(_prepare_ubershader_chunk(vertex_code1));
+		strings_vertex.push_back(filtered_strings.back()->get().get_data());
+	} else {
+		strings_vertex.push_back(vertex_code1.get_data());
+	}
+
+	if (p_cc) {
+		r_out.owned_strings.push_back(p_cc->vertex_globals.ascii());
+		strings_vertex.push_back(r_out.owned_strings.back()->get().get_data());
+	}
+
+	if (build_ubershader) {
+		filtered_strings.push_back(_prepare_ubershader_chunk(vertex_code2));
+		strings_vertex.push_back(filtered_strings.back()->get().get_data());
+	} else {
+		strings_vertex.push_back(vertex_code2.get_data());
+	}
+
+	if (p_cc) {
+		r_out.owned_strings.push_back(p_cc->vertex.ascii());
+		strings_vertex.push_back(r_out.owned_strings.back()->get().get_data());
+	}
+
+	if (build_ubershader) {
+		filtered_strings.push_back(_prepare_ubershader_chunk(vertex_code3));
+		strings_vertex.push_back(filtered_strings.back()->get().get_data());
+	} else {
+		strings_vertex.push_back(vertex_code3.get_data());
+	}
+
+#ifdef DEBUG_SHADER
+	DEBUG_PRINT("\nVertex Code:\n\n" + String(code_string.get_data()));
+	for (int i = 0; i < strings_vertex.size(); i++) {
+		//print_line("vert strings "+itos(i)+":"+String(strings_vertex[i]));
+	}
+#endif
+
+	/* FRAGMENT SHADER */
+
+	LocalVector<const char *> strings_fragment(strings_common);
+
+	//fragment precision is medium
+	strings_fragment.push_back("precision highp float;\n");
+	strings_fragment.push_back("precision highp int;\n");
+#ifndef GLES_OVER_GL
+	strings_fragment.push_back("precision highp sampler2D;\n");
+	strings_fragment.push_back("precision highp samplerCube;\n");
+	strings_fragment.push_back("precision highp sampler2DArray;\n");
+#endif
+
+	if (build_ubershader) {
+		filtered_strings.push_back(_prepare_ubershader_chunk(fragment_code0));
+		strings_fragment.push_back(filtered_strings.back()->get().get_data());
+	} else {
+		strings_fragment.push_back(fragment_code0.get_data());
+	}
+
+	if (p_cc) {
+		r_out.owned_strings.push_back(p_cc->uniforms.ascii());
+		strings_fragment.push_back(r_out.owned_strings.back()->get().get_data());
+	}
+
+	if (build_ubershader) {
+		filtered_strings.push_back(_prepare_ubershader_chunk(fragment_code1));
+		strings_fragment.push_back(filtered_strings.back()->get().get_data());
+	} else {
+		strings_fragment.push_back(fragment_code1.get_data());
+	}
+
+	if (p_cc) {
+		r_out.owned_strings.push_back(p_cc->fragment_globals.ascii());
+		strings_fragment.push_back(r_out.owned_strings.back()->get().get_data());
+	}
+
+	if (build_ubershader) {
+		filtered_strings.push_back(_prepare_ubershader_chunk(fragment_code2));
+		strings_fragment.push_back(filtered_strings.back()->get().get_data());
+	} else {
+		strings_fragment.push_back(fragment_code2.get_data());
+	}
+
+	if (p_cc) {
+		r_out.owned_strings.push_back(p_cc->light.ascii());
+		strings_fragment.push_back(r_out.owned_strings.back()->get().get_data());
+	}
+
+	if (build_ubershader) {
+		filtered_strings.push_back(_prepare_ubershader_chunk(fragment_code3));
+		strings_fragment.push_back(filtered_strings.back()->get().get_data());
+	} else {
+		strings_fragment.push_back(fragment_code3.get_data());
+	}
+
+	if (p_cc) {
+		r_out.owned_strings.push_back(p_cc->fragment.ascii());
+		strings_fragment.push_back(r_out.owned_strings.back()->get().get_data());
+	}
+
+	if (build_ubershader) {
+		filtered_strings.push_back(_prepare_ubershader_chunk(fragment_code4));
+		strings_fragment.push_back(filtered_strings.back()->get().get_data());
+	} else {
+		strings_fragment.push_back(fragment_code4.get_data());
+	}
+
+#ifdef DEBUG_SHADER
+	DEBUG_PRINT("\nFragment Globals:\n\n" + String(code_globals.get_data()));
+	DEBUG_PRINT("\nFragment Code:\n\n" + String(code_string2.get_data()));
+	for (int i = 0; i < strings_fragment.size(); i++) {
+		//print_line("frag strings "+itos(i)+":"+String(strings_fragment[i]));
+	}
+#endif
+
+	r_out.strings_vertex = strings_vertex;
+	r_out.strings_fragment = strings_fragment;
+	return true;
+}
+
+String ShaderGLES3::compute_resident_program_key(const CompileSourceBuild &p_src) const {
+	// The platform strings are constant per process: cache them so the recipe
+	// submit path (and repeated version builds) don't issue glGetString calls
+	// that contend with the driver while workers compile.
+	static CharString vendor, renderer, version_str;
+	if (vendor.size() == 0) {
+		vendor = (const char *)glGetString(GL_VENDOR);
+		renderer = (const char *)glGetString(GL_RENDERER);
+		version_str = (const char *)glGetString(GL_VERSION);
+	}
+	const char *strings_platform[] = {
+		vendor.get_data(),
+		renderer.get_data(),
+		version_str.get_data(),
+		nullptr,
+	};
+	return ShaderCacheGLES3::hash_program(strings_platform, p_src.strings_vertex, p_src.strings_fragment);
+}
+
+// Defined after the version machinery; declared here for the recipe path.
+static String _shader_conditional_name(const char *p_define);
+
+Dictionary ShaderGLES3::submit_recipe(uint32_t p_code_id, const PoolStringArray &p_enabled_conditionals, const String &p_material_path) {
+	Dictionary result;
+	result["success"] = false;
+	result["shader_name"] = get_shader_name();
+	result["material_path"] = p_material_path;
+
+	if (!recipe_compile_queue) {
+		result["error"] = "recipe_workers_not_set";
+		return result;
+	}
+	if (p_code_id != CUSTOM_SHADER_DISABLED && !custom_code_map.has(p_code_id)) {
+		result["error"] = "invalid_custom_code_id";
+		return result;
+	}
+
+	// Normalize the requested conditionals into the version mask, like the
+	// variant submit path does.
+	uint32_t requested_variant = 0;
+	PoolStringArray normalized_conditionals;
+	PoolStringArray::Read requested = p_enabled_conditionals.read();
+	for (int requested_index = 0; requested_index < p_enabled_conditionals.size(); requested_index++) {
+		String requested_name = requested[requested_index].strip_edges().trim_prefix("#define").strip_edges();
+		bool found = false;
+		for (int conditional_index = 0; conditional_index < conditional_count; conditional_index++) {
+			const String conditional_name = _shader_conditional_name(conditional_defines[conditional_index]);
+			if (requested_name == conditional_name) {
+				requested_variant |= uint32_t(1) << conditional_index;
+				normalized_conditionals.append(conditional_name);
+				found = true;
+				break;
+			}
+		}
+		if (!found) {
+			result["error"] = "unknown_conditional";
+			result["unknown_conditional"] = requested_name;
+			return result;
+		}
+	}
+	result["enabled_conditionals"] = normalized_conditionals;
+	result["variant"] = requested_variant;
+
+	VersionKey key;
+	key.version = requested_variant;
+	key.code_version = p_code_id;
+
+	// Build the sources and the residency key on the main thread: no GL work
+	// beyond the cached glGetString, no version_map entry, no state machine.
+	CompileSourceBuild src;
+	const CustomCode *cc = nullptr;
+	if (p_code_id != CUSTOM_SHADER_DISABLED) {
+		cc = custom_code_map.getptr(p_code_id);
+	}
+	if (!build_compile_sources(key, cc, false, false, src)) {
+		result["error"] = "source_build_failed";
+		return result;
+	}
+	String program_key = compute_resident_program_key(src);
+	result["program_cache_key"] = program_key;
+
+	if (Engine::get_singleton()->is_shader_program_residency_enabled()) {
+		if (resident_programs.getptr(program_key)) {
+			result["success"] = true;
+			result["pending"] = false;
+			result["already_resident"] = true;
+			return result;
+		}
+	}
+
+	if (recipe_jobs_in_flight.has(program_key)) {
+		// Another recipe is already compiling this exact program; the poll
+		// will make it resident before the handles drain.
+		result["success"] = true;
+		result["pending"] = false;
+		result["already_queued"] = true;
+		return result;
+	}
+
+	LocalVector<char> vertex_code;
+	concat_shader_strings(src.strings_vertex, &vertex_code);
+	LocalVector<char> fragment_code;
+	concat_shader_strings(src.strings_fragment, &fragment_code);
+
+	const uint32_t job_id = ++recipe_job_id_sequence;
+	const uint64_t handle = ++recipe_handle_sequence;
+
+	recipe_jobs_in_flight[program_key] = job_id;
+	RecipeJob job;
+	job.owner = this;
+	job.program_key = program_key;
+	job.job_id = job_id;
+	job.handle = handle;
+	job.material_path = p_material_path;
+	job.shader_name = get_shader_name();
+	recipe_jobs.push_back(job);
+
+	// The job owns copies of the sources: no Version pointer, no shared state.
+	recipe_compile_queue->enqueue_compile(job_id, [this, job_id, variant_mask = key.version, vertex_code, fragment_code]() {
+		Version::Ids async_ids;
+		async_ids.main = glCreateProgram();
+		async_ids.vert = glCreateShader(GL_VERTEX_SHADER);
+		async_ids.frag = glCreateShader(GL_FRAGMENT_SHADER);
+
+		LocalVector<const char *> job_strings_vertex;
+		job_strings_vertex.push_back(vertex_code.ptr());
+		LocalVector<const char *> job_strings_fragment;
+		job_strings_fragment.push_back(fragment_code.ptr());
+
+		_set_source(async_ids, job_strings_vertex, job_strings_fragment);
+		glCompileShader(async_ids.vert);
+		glCompileShader(async_ids.frag);
+		if (_complete_compile(async_ids, true, variant_mask)) {
+			GLenum format = 0;
+			PoolByteArray data;
+			if (_complete_link(async_ids, &format, &data)) {
+				glDeleteShader(async_ids.frag);
+				glDeleteShader(async_ids.vert);
+				glDeleteProgram(async_ids.main);
+				recipe_compile_queue->complete_job(job_id, format, data);
+				return;
+			}
+		}
+		recipe_compile_queue->complete_job(job_id, 0, PoolByteArray());
+	});
+
+	result["success"] = true;
+	result["pending"] = true;
+	result["handle"] = handle;
+	return result;
+}
+
+bool ShaderGLES3::consume_recipe_binary(const String &p_program_key, GLenum p_format, const PoolByteArray &p_data) {
+	Version::Ids ids;
+	ids.main = glCreateProgram();
+	ERR_FAIL_COND_V(ids.main == 0, false);
+	PoolByteArray::Read r = p_data.read();
+	glProgramBinary(ids.main, p_format, r.ptr(), p_data.size());
+	GLint status = 0;
+	glGetProgramiv(ids.main, GL_LINK_STATUS, &status);
+	if (status == GL_FALSE) {
+		glDeleteProgram(ids.main);
+		return false;
+	}
+	if (shader_cache) {
+		// Store the binary for the next session's engine cache lookup.
+		cache_write_queue->enqueue(ids.main, [=]() {
+			shader_cache->store(p_program_key, (uint32_t)p_format, p_data);
+		});
+	}
+	if (Engine::get_singleton()->is_shader_program_residency_enabled()) {
+		register_resident_program_ids(p_program_key, ids);
+	} else {
+		glDeleteProgram(ids.main);
+	}
+	return true;
+}
+
+void ShaderGLES3::register_resident_program_ids(const String &p_program_key, const Version::Ids &p_ids) {
+	if (!Engine::get_singleton()->is_shader_program_residency_enabled()) {
+		glDeleteProgram(p_ids.main);
+		return;
+	}
+	ResidentProgram *resident = resident_programs.getptr(p_program_key);
+	if (resident) {
+		// Another program already covers this key: keep that one.
+		_claim_resident_program(resident);
+		glDeleteProgram(p_ids.main);
+		return;
+	}
+	ResidentProgram stored;
+	stored.ids = p_ids;
+	_claim_resident_program(&stored);
+	resident_programs[p_program_key] = stored;
+	Engine::get_singleton()->notify_shader_program_retained();
+}
+
+Dictionary ShaderGLES3::poll_recipe_compiles() {
+	Dictionary result;
+	Array finished;
+	for (uint32_t i = 0; recipe_compile_queue && i < recipe_jobs.size();) {
+		RecipeJob &job = recipe_jobs.write[i];
+		GLenum format = 0;
+		PoolByteArray data;
+		if (!recipe_compile_queue->poll_job_result(job.job_id, &format, &data)) {
+			i++;
+			continue;
+		}
+		Dictionary item;
+		item["handle"] = job.handle;
+		item["shader_name"] = job.shader_name;
+		item["material_path"] = job.material_path;
+		item["program_cache_key"] = job.program_key;
+		bool success = false;
+		if (data.size() > 0) {
+			success = job.owner->consume_recipe_binary(job.program_key, format, data);
+		}
+		item["success"] = success;
+		finished.push_back(item);
+		job.owner->recipe_jobs_in_flight.erase(job.program_key);
+		recipe_jobs.remove(i);
+	}
+	result["pending"] = (int)recipe_jobs.size();
+	result["finished"] = finished;
+	return result;
+}
+
+
 void ShaderGLES3::_set_source(Version::Ids p_ids, const LocalVector<const char *> &p_vertex_strings, const LocalVector<const char *> &p_fragment_strings) const {
 	glShaderSource(p_ids.vert, p_vertex_strings.size(), p_vertex_strings.ptr(), nullptr);
 	glShaderSource(p_ids.frag, p_fragment_strings.size(), p_fragment_strings.ptr(), nullptr);
 }
 
-bool ShaderGLES3::_complete_compile(Version::Ids p_ids, bool p_retrievable) const {
+bool ShaderGLES3::_complete_compile(Version::Ids p_ids, bool p_retrievable, uint32_t p_conditional_mask) const {
 	GLint status;
 
 	glGetShaderiv(p_ids.vert, GL_COMPILE_STATUS, &status);
@@ -1167,7 +1393,10 @@ bool ShaderGLES3::_complete_compile(Version::Ids p_ids, bool p_retrievable) cons
 	if (feedback_count) {
 		Vector<const char *> feedback;
 		for (int i = 0; i < feedback_count; i++) {
-			if (feedbacks[i].conditional == -1 || (1 << feedbacks[i].conditional) & conditional_version.version) {
+			// Use the mask of the version being compiled, not the shader's
+			// current conditional_version: this may run on a worker thread (or
+			// be driven by the poll) while conditional_version moved on.
+			if (feedbacks[i].conditional == -1 || (1 << feedbacks[i].conditional) & p_conditional_mask) {
 				//conditional for this feedback is enabled
 				feedback.push_back(feedbacks[i].name);
 			}
@@ -1560,11 +1789,24 @@ void ShaderGLES3::init_async_compilation() {
 	}
 }
 
-bool ShaderGLES3::is_async_compilation_supported() {
+bool ShaderGLES3::is_async_compilation_supported() const {
 	return max_simultaneous_compiles > 0 && (compile_queue || parallel_compile_supported);
 }
 
+void ShaderGLES3::_cancel_pending_recipe_jobs() {
+	for (int i = recipe_jobs.size() - 1; i >= 0; i--) {
+		if (recipe_jobs[i].owner == this) {
+			if (recipe_compile_queue) {
+				recipe_compile_queue->cancel_compile(recipe_jobs[i].job_id);
+			}
+			recipe_jobs.remove(i);
+		}
+	}
+	// Jobs already completed in the result map are simply never consumed.
+}
+
 void ShaderGLES3::finish() {
+	_cancel_pending_recipe_jobs();
 	const VersionKey *V = nullptr;
 	while ((V = version_map.next(V))) {
 		Version &v = version_map[*V];

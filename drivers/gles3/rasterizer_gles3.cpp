@@ -32,6 +32,7 @@
 
 #include "core/os/os.h"
 #include "core/project_settings.h"
+#include "shader_precompile_workers_gles3.h"
 
 RasterizerStorage *RasterizerGLES3::get_storage() {
 	return storage;
@@ -45,7 +46,7 @@ RasterizerScene *RasterizerGLES3::get_scene() {
 	return scene;
 }
 
-Dictionary RasterizerGLES3::shader_precompile_internal_variant(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals) {
+ShaderGLES3 *RasterizerGLES3::_find_internal_shader(const String &p_shader_name) {
 	ShaderGLES3 *internal_shaders[] = {
 		&storage->shaders.copy,
 		&storage->shaders.cubemap_filter,
@@ -67,21 +68,53 @@ Dictionary RasterizerGLES3::shader_precompile_internal_variant(const String &p_s
 		&canvas->state.lens_shader,
 	};
 
-	PoolStringArray available_shader_names;
 	for (uint32_t i = 0; i < sizeof(internal_shaders) / sizeof(internal_shaders[0]); i++) {
-		const String shader_name = internal_shaders[i]->get_public_shader_name();
-		available_shader_names.append(shader_name);
-		if (shader_name == p_shader_name) {
-			return internal_shaders[i]->precompile_custom_shader_variant(ShaderGLES3::CUSTOM_SHADER_DISABLED, p_enabled_conditionals);
+		if (internal_shaders[i]->get_public_shader_name() == p_shader_name) {
+			return internal_shaders[i];
 		}
 	}
+	return nullptr;
+}
 
+Dictionary RasterizerGLES3::shader_precompile_internal_variant(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals) {
+	ShaderGLES3 *found = _find_internal_shader(p_shader_name);
+	if (found) {
+		return found->precompile_custom_shader_variant(ShaderGLES3::CUSTOM_SHADER_DISABLED, p_enabled_conditionals);
+	}
 	Dictionary result;
 	result["success"] = false;
 	result["error"] = "unknown_internal_shader";
 	result["shader_name"] = p_shader_name;
-	result["available_shader_names"] = available_shader_names;
 	return result;
+}
+
+Dictionary RasterizerGLES3::shader_internal_compile_recipe(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals) {
+	ShaderGLES3 *found = _find_internal_shader(p_shader_name);
+	if (found) {
+		return found->submit_recipe(ShaderGLES3::CUSTOM_SHADER_DISABLED, p_enabled_conditionals, String());
+	}
+	Dictionary result;
+	result["success"] = false;
+	result["error"] = "unknown_internal_shader";
+	result["shader_name"] = p_shader_name;
+	return result;
+}
+
+Dictionary RasterizerGLES3::shader_poll_recipes() {
+	return ShaderGLES3::poll_recipe_compiles();
+}
+
+void RasterizerGLES3::shader_set_recipe_workers(int p_worker_count) {
+	if (p_worker_count <= 0) {
+		// Cancel any recipes still queued: the consumer is going away.
+		Dictionary drained = ShaderGLES3::poll_recipe_compiles();
+		ShaderGLES3::recipe_compile_queue = nullptr;
+		ShaderPrecompileWorkersGLES3::release_workers();
+		return;
+	}
+	if (ShaderPrecompileWorkersGLES3::create_workers(p_worker_count)) {
+		ShaderGLES3::recipe_compile_queue = ShaderPrecompileWorkersGLES3::singleton;
+	}
 }
 
 Dictionary RasterizerGLES3::shader_release_resident_program_owner(const String &p_owner) {
