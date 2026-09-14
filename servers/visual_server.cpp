@@ -1912,6 +1912,8 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("shader_internal_compile_recipe", "shader_name", "enabled_conditionals"), &VisualServer::shader_internal_compile_recipe);
 	ClassDB::bind_method(D_METHOD("shader_poll_recipes"), &VisualServer::shader_poll_recipes);
 	ClassDB::bind_method(D_METHOD("shader_set_recipe_workers", "worker_count"), &VisualServer::shader_set_recipe_workers);
+	ClassDB::bind_method(D_METHOD("shader_declare_recipe_alias", "alias_program_key", "canonical_program_key"), &VisualServer::shader_declare_recipe_alias);
+	ClassDB::bind_method(D_METHOD("shader_set_recipe_source_hashing", "enabled"), &VisualServer::shader_set_recipe_source_hashing);
 	ClassDB::bind_method(D_METHOD("shader_release_resident_program_owner", "owner"), &VisualServer::shader_release_resident_program_owner);
 
 	ClassDB::bind_method(D_METHOD("material_create"), &VisualServer::material_create);

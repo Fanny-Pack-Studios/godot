@@ -117,6 +117,14 @@ void RasterizerGLES3::shader_set_recipe_workers(int p_worker_count) {
 	}
 }
 
+void RasterizerGLES3::shader_declare_recipe_alias(const String &p_alias_program_key, const String &p_canonical_program_key) {
+	ShaderGLES3::declare_recipe_alias(p_alias_program_key, p_canonical_program_key);
+}
+
+void RasterizerGLES3::shader_set_recipe_source_hashing(bool p_enabled) {
+	ShaderGLES3::set_recipe_source_hashing(p_enabled);
+}
+
 Dictionary RasterizerGLES3::shader_release_resident_program_owner(const String &p_owner) {
 	ShaderGLES3 *internal_shaders[] = {
 		&storage->shaders.copy,

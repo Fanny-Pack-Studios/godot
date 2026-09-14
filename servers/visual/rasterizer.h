@@ -1328,6 +1328,13 @@ public:
 		result["error"] = "unsupported_renderer";
 		return result;
 	}
+	virtual void shader_declare_recipe_alias(const String &p_alias_program_key, const String &p_canonical_program_key) {
+		// Equivalence aliases are a recipe-path concept: renderers without
+		// recipe compilation have nothing to register.
+	}
+	virtual void shader_set_recipe_source_hashing(bool p_enabled) {
+		// Discovery-only hashing: no-op without recipe compilation.
+	}
 	virtual Dictionary shader_poll_recipes() {
 		Dictionary result;
 		result["success"] = false;

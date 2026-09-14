@@ -30,6 +30,7 @@
 
 #include "shader_gles3.h"
 
+#include "core/crypto/crypto_core.h"
 #include "core/engine.h"
 #include "core/local_vector.h"
 #include "core/os/os.h"
@@ -75,6 +76,8 @@ ShaderCompileQueueGLES3 *ShaderGLES3::recipe_compile_queue = nullptr;
 Vector<ShaderGLES3::RecipeJob> ShaderGLES3::recipe_jobs;
 uint64_t ShaderGLES3::recipe_handle_sequence = 0;
 uint32_t ShaderGLES3::recipe_job_id_sequence = 0;
+HashMap<String, Vector<String>> ShaderGLES3::recipe_alias_groups;
+bool ShaderGLES3::recipe_source_hashing = false;
 
 // Concatenates a shader string array into a single null-terminated buffer for
 // compile jobs that run on another thread.
@@ -1097,6 +1100,159 @@ String ShaderGLES3::compute_resident_program_key(const CompileSourceBuild &p_src
 // Defined after the version machinery; declared here for the recipe path.
 static String _shader_conditional_name(const char *p_define);
 
+// --- Recipe equivalence hashing ------------------------------------------
+//
+// The residency key hashes platform strings + source text, so it already
+// dedups recipes that build the exact same sources. The hashes here classify
+// the remaining equivalences:
+// - source hash: vertex+fragment text only (no platform strings), so it is
+//   comparable across machines and drivers;
+// - normalized source hash: the text after dropping #define lines of enabled
+//   conditionals that are never referenced anywhere else in either stage.
+//   Sources differing only in those lines preprocess to the same translation
+//   unit, so the equivalence holds on any conformant driver (commiteable).
+// - binary hash: bytes of the compiled program binary. Observed equality is
+//   only valid for the driver that produced the binaries.
+
+static bool _is_recipe_word_char(CharType p_c) {
+	return (p_c >= '0' && p_c <= '9') || (p_c >= 'a' && p_c <= 'z') || (p_c >= 'A' && p_c <= 'Z') || p_c == '_';
+}
+
+// Returns the macro name of a "#define NAME" line, or an empty string.
+static String _define_line_token(const String &p_line) {
+	const String trimmed = p_line.strip_edges();
+	if (!trimmed.begins_with("#define")) {
+		return String();
+	}
+	if (trimmed.length() < 8 || (trimmed[7] != ' ' && trimmed[7] != '\t')) {
+		return String();
+	}
+	int start = 7;
+	while (start < trimmed.length() && (trimmed[start] == ' ' || trimmed[start] == '\t')) {
+		start++;
+	}
+	int end = start;
+	while (end < trimmed.length() && _is_recipe_word_char(trimmed[end])) {
+		end++;
+	}
+	if (start == end) {
+		return String();
+	}
+	return trimmed.substr(start, end - start);
+}
+
+static void _collect_referenced_tokens(const String &p_line, Set<String> &r_tokens) {
+	const int len = p_line.length();
+	int i = 0;
+	while (i < len) {
+		if (!_is_recipe_word_char(p_line[i])) {
+			i++;
+			continue;
+		}
+		const int start = i;
+		while (i < len && _is_recipe_word_char(p_line[i])) {
+			i++;
+		}
+		r_tokens.insert(p_line.substr(start, i - start));
+	}
+}
+
+static String _strip_lines_without_references(const Vector<String> &p_lines, const Set<String> &p_referenced, const Set<String> &p_conditional_names) {
+	String out;
+	for (int i = 0; i < p_lines.size(); i++) {
+		const String token = _define_line_token(p_lines[i]);
+		const bool drop = !token.empty() && p_conditional_names.has(token) && !p_referenced.has(token);
+		if (!drop) {
+			out += p_lines[i];
+			out += "\n";
+		}
+	}
+	return out;
+}
+
+static String _sha256_hex_pair(const CharString &p_a, const CharString &p_b) {
+	CryptoCore::SHA256Context ctx;
+	ctx.start();
+	if (p_a.size() > 0) {
+		ctx.update((const uint8_t *)p_a.get_data(), p_a.size());
+	}
+	const uint8_t separator[1] = { 0 };
+	ctx.update(separator, 1);
+	if (p_b.size() > 0) {
+		ctx.update((const uint8_t *)p_b.get_data(), p_b.size());
+	}
+	unsigned char hash[32];
+	ctx.finish(hash);
+	String hex;
+	for (int i = 0; i < 32; i++) {
+		hex += vformat("%02x", hash[i]);
+	}
+	return hex;
+}
+
+static String _sha256_hex_bytes(const PoolByteArray &p_data) {
+	PoolByteArray::Read r = p_data.read();
+	CryptoCore::SHA256Context ctx;
+	ctx.start();
+	ctx.update(r.ptr(), p_data.size());
+	unsigned char hash[32];
+	ctx.finish(hash);
+	String hex;
+	for (int i = 0; i < 32; i++) {
+		hex += vformat("%02x", hash[i]);
+	}
+	return hex;
+}
+
+void ShaderGLES3::set_recipe_source_hashing(bool p_enabled) {
+	recipe_source_hashing = p_enabled;
+}
+
+void ShaderGLES3::compute_source_hashes(const CompileSourceBuild &p_src, Dictionary &r_result) const {
+	if (!recipe_source_hashing) {
+		// Discovery-only cost: the equivalence tooling needs these hashes;
+		// production warm-ups go straight to the residency key.
+		return;
+	}
+	LocalVector<char> vertex_code;
+	concat_shader_strings(p_src.strings_vertex, &vertex_code);
+	LocalVector<char> fragment_code;
+	concat_shader_strings(p_src.strings_fragment, &fragment_code);
+
+	// Source-level hash: no platform strings, comparable across machines.
+	const String vertex_text((const char *)vertex_code.ptr());
+	const String fragment_text((const char *)fragment_code.ptr());
+	r_result["source_sha256"] = _sha256_hex_pair(vertex_text.ascii(), fragment_text.ascii());
+
+	Set<String> conditional_names;
+	for (int i = 0; i < conditional_count; i++) {
+		const String name = _shader_conditional_name(conditional_defines[i]);
+		if (!name.empty()) {
+			conditional_names.insert(name);
+		}
+	}
+	if (conditional_names.empty()) {
+		// Nothing to normalize: the normalized source is the source itself.
+		r_result["normalized_source_sha256"] = r_result["source_sha256"];
+		return;
+	}
+	Set<String> referenced;
+	for (int stage = 0; stage < 2; stage++) {
+		const String &text = stage == 0 ? vertex_text : fragment_text;
+		const Vector<String> lines = text.split("\n");
+		for (int li = 0; li < lines.size(); li++) {
+			const String token = _define_line_token(lines[li]);
+			if (!token.empty() && conditional_names.has(token)) {
+				continue;
+			}
+			_collect_referenced_tokens(lines[li], referenced);
+		}
+	}
+	const String normalized_vertex = _strip_lines_without_references(vertex_text.split("\n"), referenced, conditional_names);
+	const String normalized_fragment = _strip_lines_without_references(fragment_text.split("\n"), referenced, conditional_names);
+	r_result["normalized_source_sha256"] = _sha256_hex_pair(normalized_vertex.ascii(), normalized_fragment.ascii());
+}
+
 Dictionary ShaderGLES3::submit_recipe(uint32_t p_code_id, const PoolStringArray &p_enabled_conditionals, const String &p_material_path) {
 	Dictionary result;
 	result["success"] = false;
@@ -1155,6 +1311,7 @@ Dictionary ShaderGLES3::submit_recipe(uint32_t p_code_id, const PoolStringArray 
 	}
 	String program_key = compute_resident_program_key(src);
 	result["program_cache_key"] = program_key;
+	compute_source_hashes(src, result);
 
 	if (Engine::get_singleton()->is_shader_program_residency_enabled()) {
 		if (resident_programs.getptr(program_key)) {
@@ -1227,7 +1384,7 @@ Dictionary ShaderGLES3::submit_recipe(uint32_t p_code_id, const PoolStringArray 
 	return result;
 }
 
-bool ShaderGLES3::consume_recipe_binary(const String &p_program_key, GLenum p_format, const PoolByteArray &p_data) {
+bool ShaderGLES3::_load_program_binary(const String &p_program_key, GLenum p_format, const PoolByteArray &p_data) {
 	Version::Ids ids;
 	ids.main = glCreateProgram();
 	ERR_FAIL_COND_V(ids.main == 0, false);
@@ -1251,6 +1408,41 @@ bool ShaderGLES3::consume_recipe_binary(const String &p_program_key, GLenum p_fo
 		glDeleteProgram(ids.main);
 	}
 	return true;
+}
+
+bool ShaderGLES3::consume_recipe_binary(const String &p_program_key, GLenum p_format, const PoolByteArray &p_data) {
+	if (!_load_program_binary(p_program_key, p_format, p_data)) {
+		return false;
+	}
+	// Recipes declared equivalent to this one (the equivalence analysis
+	// proved they compile to the same program): replay the canonical binary
+	// under each alias key so the gameplay bind path finds them resident.
+	// Each alias gets its own program object: the residency store owns and
+	// evicts the GL objects per key.
+	Vector<String> *aliases = recipe_alias_groups.getptr(p_program_key);
+	if (aliases) {
+		for (int i = 0; i < aliases->size(); i++) {
+			_load_program_binary((*aliases)[i], p_format, p_data);
+		}
+		recipe_alias_groups.erase(p_program_key);
+	}
+	return true;
+}
+
+void ShaderGLES3::declare_recipe_alias(const String &p_alias_key, const String &p_canonical_key) {
+	if (p_alias_key.empty() || p_canonical_key.empty() || p_alias_key == p_canonical_key) {
+		return;
+	}
+	Vector<String> *aliases = recipe_alias_groups.getptr(p_canonical_key);
+	if (!aliases) {
+		Vector<String> fresh;
+		fresh.push_back(p_alias_key);
+		recipe_alias_groups.set(p_canonical_key, fresh);
+		return;
+	}
+	if (aliases->find(p_alias_key) < 0) {
+		aliases->push_back(p_alias_key);
+	}
 }
 
 void ShaderGLES3::register_resident_program_ids(const String &p_program_key, const Version::Ids &p_ids) {
@@ -1291,6 +1483,8 @@ Dictionary ShaderGLES3::poll_recipe_compiles() {
 		bool success = false;
 		if (data.size() > 0) {
 			success = job.owner->consume_recipe_binary(job.program_key, format, data);
+			item["binary_sha256"] = _sha256_hex_bytes(data);
+			item["binary_size"] = (int)data.size();
 		}
 		item["success"] = success;
 		finished.push_back(item);

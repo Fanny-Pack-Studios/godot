@@ -136,6 +136,8 @@ public:
 	FUNC2R(Dictionary, shader_internal_compile_recipe, const String &, const PoolStringArray &)
 	FUNC0R(Dictionary, shader_poll_recipes)
 	FUNC1(shader_set_recipe_workers, int)
+	FUNC2(shader_declare_recipe_alias, const String &, const String &)
+	FUNC1(shader_set_recipe_source_hashing, bool)
 	FUNC2R(Dictionary, shader_precompile_internal_variant, const String &, const PoolStringArray &)
 	FUNC1R(Dictionary, shader_release_resident_program_owner, const String &)
 

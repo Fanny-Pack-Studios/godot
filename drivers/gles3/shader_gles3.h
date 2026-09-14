@@ -175,6 +175,14 @@ public:
 	static uint64_t recipe_handle_sequence;
 	static uint32_t recipe_job_id_sequence;
 	HashMap<String, uint32_t> recipe_jobs_in_flight; // program key -> job id
+	// Recipes declared as equivalent to another compiled recipe: the poll
+	// registers the canonical binary under the alias keys too. Keyed by the
+	// canonical residency key; entries are consumed (and removed) when the
+	// canonical binary is loaded.
+	static HashMap<String, Vector<String>> recipe_alias_groups;
+	// Source equivalence hashing for the discovery dump (submit-side cost);
+	// off by default, enabled by the equivalence analysis tooling.
+	static bool recipe_source_hashing;
 
 	static void advance_async_shaders_compilation();
 
@@ -502,7 +510,11 @@ public:
 	Dictionary submit_recipe(uint32_t p_code_id, const PoolStringArray &p_enabled_conditionals, const String &p_material_path = String());
 	bool consume_recipe_binary(const String &p_program_key, GLenum p_format, const PoolByteArray &p_data);
 	static Dictionary poll_recipe_compiles();
+	static void declare_recipe_alias(const String &p_alias_key, const String &p_canonical_key);
+	static void set_recipe_source_hashing(bool p_enabled);
 	void _cancel_pending_recipe_jobs();
+	bool _load_program_binary(const String &p_program_key, GLenum p_format, const PoolByteArray &p_data);
+	void compute_source_hashes(const CompileSourceBuild &p_src, Dictionary &r_result) const;
 	void register_resident_program_ids(const String &p_program_key, const Version::Ids &p_ids);
 	Dictionary release_resident_program_owner(const String &p_owner);
 	String get_public_shader_name() const { return get_shader_name(); }

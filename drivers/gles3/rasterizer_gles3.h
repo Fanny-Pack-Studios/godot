@@ -55,6 +55,8 @@ public:
 	virtual Dictionary shader_internal_compile_recipe(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals);
 	virtual Dictionary shader_poll_recipes();
 	virtual void shader_set_recipe_workers(int p_worker_count);
+	virtual void shader_declare_recipe_alias(const String &p_alias_program_key, const String &p_canonical_program_key);
+	virtual void shader_set_recipe_source_hashing(bool p_enabled);
 	virtual Dictionary shader_release_resident_program_owner(const String &p_owner);
 
 	virtual void set_boot_image(const Ref<Image> &p_image, const Color &p_color, bool p_scale, bool p_use_filter = true);

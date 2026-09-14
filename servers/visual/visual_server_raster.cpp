@@ -225,6 +225,14 @@ void VisualServerRaster::shader_set_recipe_workers(int p_worker_count) {
 	VSG::rasterizer->shader_set_recipe_workers(p_worker_count);
 }
 
+void VisualServerRaster::shader_declare_recipe_alias(const String &p_alias_program_key, const String &p_canonical_program_key) {
+	VSG::rasterizer->shader_declare_recipe_alias(p_alias_program_key, p_canonical_program_key);
+}
+
+void VisualServerRaster::shader_set_recipe_source_hashing(bool p_enabled) {
+	VSG::rasterizer->shader_set_recipe_source_hashing(p_enabled);
+}
+
 Dictionary VisualServerRaster::shader_release_resident_program_owner(const String &p_owner) {
 	return VSG::rasterizer->shader_release_resident_program_owner(p_owner);
 }

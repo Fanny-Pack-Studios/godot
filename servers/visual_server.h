@@ -213,6 +213,8 @@ public:
 	virtual Dictionary shader_internal_compile_recipe(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals) = 0;
 	virtual Dictionary shader_poll_recipes() = 0;
 	virtual void shader_set_recipe_workers(int p_worker_count) = 0;
+	virtual void shader_declare_recipe_alias(const String &p_alias_program_key, const String &p_canonical_program_key) = 0;
+	virtual void shader_set_recipe_source_hashing(bool p_enabled) = 0;
 	virtual Dictionary shader_release_resident_program_owner(const String &p_owner) = 0;
 
 	/* COMMON MATERIAL API */
