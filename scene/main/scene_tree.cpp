@@ -30,6 +30,7 @@
 
 #include "scene_tree.h"
 
+#include "core/engine.h"
 #include "core/io/marshalls.h"
 #include "core/io/resource_loader.h"
 #include "core/message_queue.h"
@@ -1167,6 +1168,9 @@ void SceneTree::_notify_group_pause(const StringName &p_group, int p_notificatio
 	Node **nodes = nodes_copy.ptrw();
 
 	call_lock++;
+	Engine *diagnostics_engine = Engine::get_singleton();
+	const bool track_node_process = diagnostics_engine->is_texture_diagnostics_tracking_enabled() &&
+			(p_notification == Node::NOTIFICATION_PROCESS || p_notification == Node::NOTIFICATION_INTERNAL_PROCESS);
 
 	for (int i = 0; i < node_count; i++) {
 		Node *n = nodes[i];
@@ -1181,7 +1185,16 @@ void SceneTree::_notify_group_pause(const StringName &p_group, int p_notificatio
 			continue;
 		}
 
+		uint64_t notification_started_usec = track_node_process ? OS::get_singleton()->get_ticks_usec() : 0;
 		n->notification(p_notification);
+		if (track_node_process) {
+			uint64_t notification_finished_usec = OS::get_singleton()->get_ticks_usec();
+			if (notification_finished_usec - notification_started_usec >= 1000) {
+				String phase = p_notification == Node::NOTIFICATION_INTERNAL_PROCESS ? "node_internal_process:" : "node_process:";
+				phase += n->is_inside_tree() ? String(n->get_path()) : String(n->get_name());
+				diagnostics_engine->record_frame_diagnostics_event(phase, notification_started_usec, notification_finished_usec);
+			}
+		}
 		//ERR_FAIL_COND(node_count != g.nodes.size());
 	}
 

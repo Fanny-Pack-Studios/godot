@@ -2468,19 +2468,37 @@ bool Main::iteration() {
 	uint64_t idle_begin = OS::get_singleton()->get_ticks_usec();
 	diagnostics_phase_started = frame_diagnostics_tracking ? idle_begin : 0;
 
+	uint64_t diagnostics_idle_subphase_started = diagnostics_phase_started;
 	if (OS::get_singleton()->get_main_loop()->idle(step * time_scale)) {
 		exit = true;
 	}
+	if (frame_diagnostics_tracking) {
+		uint64_t diagnostics_idle_subphase_finished = OS::get_singleton()->get_ticks_usec();
+		diagnostics_engine->record_frame_diagnostics_event("main_idle_scene_tree", diagnostics_idle_subphase_started, diagnostics_idle_subphase_finished);
+		diagnostics_idle_subphase_started = diagnostics_idle_subphase_finished;
+	}
 	visual_server_callbacks->flush();
+	if (frame_diagnostics_tracking) {
+		uint64_t diagnostics_idle_subphase_finished = OS::get_singleton()->get_ticks_usec();
+		diagnostics_engine->record_frame_diagnostics_event("main_idle_visual_callbacks", diagnostics_idle_subphase_started, diagnostics_idle_subphase_finished);
+		diagnostics_idle_subphase_started = diagnostics_idle_subphase_finished;
+	}
 
 	// Ensure that VisualServer is kept up to date at least once with any ordering changes
 	// of canvas items before a render.
 	// This ensures this will be done at least once in apps that create their own MainLoop.
 	Viewport::flush_canvas_parents_dirty_order();
+	if (frame_diagnostics_tracking) {
+		uint64_t diagnostics_idle_subphase_finished = OS::get_singleton()->get_ticks_usec();
+		diagnostics_engine->record_frame_diagnostics_event("main_idle_canvas_order", diagnostics_idle_subphase_started, diagnostics_idle_subphase_finished);
+		diagnostics_idle_subphase_started = diagnostics_idle_subphase_finished;
+	}
 
 	message_queue->flush();
 	if (frame_diagnostics_tracking) {
-		diagnostics_engine->record_frame_diagnostics_event("main_idle", diagnostics_phase_started, OS::get_singleton()->get_ticks_usec());
+		uint64_t diagnostics_idle_finished = OS::get_singleton()->get_ticks_usec();
+		diagnostics_engine->record_frame_diagnostics_event("main_idle_message_queue", diagnostics_idle_subphase_started, diagnostics_idle_finished);
+		diagnostics_engine->record_frame_diagnostics_event("main_idle", diagnostics_phase_started, diagnostics_idle_finished);
 	}
 
 	diagnostics_phase_started = frame_diagnostics_tracking ? OS::get_singleton()->get_ticks_usec() : 0;
