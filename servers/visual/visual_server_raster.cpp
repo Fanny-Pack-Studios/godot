@@ -30,6 +30,7 @@
 
 #include "visual_server_raster.h"
 
+#include "core/engine.h"
 #include "core/io/marshalls.h"
 #include "core/os/os.h"
 #include "core/project_settings.h"
@@ -102,6 +103,9 @@ void VisualServerRaster::request_frame_drawn_callback(Object *p_where, const Str
 }
 
 void VisualServerRaster::draw(bool p_swap_buffers, double frame_step) {
+	Engine *diagnostics_engine = Engine::get_singleton();
+	bool diagnostics_tracking = diagnostics_engine->is_texture_diagnostics_tracking_enabled();
+	uint64_t diagnostics_started_usec = diagnostics_tracking ? OS::get_singleton()->get_ticks_usec() : 0;
 	//needs to be done before changes is reset to 0, to not force the editor to redraw
 	VS::get_singleton()->emit_signal("frame_pre_draw");
 
@@ -132,6 +136,9 @@ void VisualServerRaster::draw(bool p_swap_buffers, double frame_step) {
 		frame_drawn_callbacks.pop_front();
 	}
 	VS::get_singleton()->emit_signal("frame_post_draw");
+	if (diagnostics_tracking) {
+		diagnostics_engine->record_frame_diagnostics_event("render_draw", diagnostics_started_usec, OS::get_singleton()->get_ticks_usec());
+	}
 }
 
 void VisualServerRaster::sync() {

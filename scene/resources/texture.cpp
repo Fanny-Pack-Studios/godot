@@ -31,10 +31,12 @@
 #include "texture.h"
 
 #include "core/core_string_names.h"
+#include "core/engine.h"
 #include "core/io/image_loader.h"
 #include "core/math/geometry.h"
 #include "core/method_bind_ext.gen.inc"
 #include "core/os/os.h"
+#include "core/os/thread.h"
 #include "mesh.h"
 #include "scene/resources/bit_map.h"
 #include "servers/camera/camera_feed.h"
@@ -681,10 +683,35 @@ Error StreamTexture::_load_data(const String &p_path, int &tw, int &th, int &tw_
 }
 
 Error StreamTexture::load(const String &p_path) {
+	Engine *engine = Engine::get_singleton();
+	bool diagnostics_tracking = engine->is_texture_diagnostics_tracking_enabled();
+	uint64_t read_started_usec = diagnostics_tracking ? OS::get_singleton()->get_ticks_usec() : 0;
 	int lw, lh, lwc, lhc, lflags;
 	Ref<Image> image;
 	image.instance();
 	Error err = _load_data(p_path, lw, lh, lwc, lhc, lflags, image);
+	if (diagnostics_tracking) {
+		Engine::TextureDiagnosticsEvent event;
+		event.started_usec = read_started_usec;
+		event.finished_usec = OS::get_singleton()->get_ticks_usec();
+		event.idle_frame = engine->get_idle_frames();
+		event.render_frame = engine->get_frames_drawn();
+		event.thread_id = Thread::get_caller_id();
+		event.operation = "stream_texture_read";
+		event.path = p_path;
+		event.backend = "resource_loader";
+		event.main_thread = event.thread_id == Thread::get_main_id();
+		event.success = err == OK;
+		if (err == OK) {
+			event.data_size_bytes = image->get_data().size();
+			event.width = image->get_width();
+			event.height = image->get_height();
+			event.format = image->get_format();
+			event.mipmap_count = image->get_mipmap_count();
+			event.compressed = image->is_compressed();
+		}
+		engine->record_texture_diagnostics_event(event);
+	}
 	if (err) {
 		return err;
 	}
@@ -693,8 +720,28 @@ Error StreamTexture::load(const String &p_path) {
 		//temporarily set path if no path set for resource, helps find errors
 		VisualServer::get_singleton()->texture_set_path(texture, p_path);
 	}
+	uint64_t submit_started_usec = diagnostics_tracking ? OS::get_singleton()->get_ticks_usec() : 0;
 	VS::get_singleton()->texture_allocate(texture, image->get_width(), image->get_height(), 0, image->get_format(), VS::TEXTURE_TYPE_2D, lflags);
 	VS::get_singleton()->texture_set_data(texture, image);
+	if (diagnostics_tracking) {
+		Engine::TextureDiagnosticsEvent event;
+		event.started_usec = submit_started_usec;
+		event.finished_usec = OS::get_singleton()->get_ticks_usec();
+		event.idle_frame = engine->get_idle_frames();
+		event.render_frame = engine->get_frames_drawn();
+		event.thread_id = Thread::get_caller_id();
+		event.data_size_bytes = image->get_data().size();
+		event.width = image->get_width();
+		event.height = image->get_height();
+		event.format = image->get_format();
+		event.mipmap_count = image->get_mipmap_count();
+		event.operation = "stream_texture_submit";
+		event.path = p_path;
+		event.backend = "visual_server";
+		event.main_thread = event.thread_id == Thread::get_main_id();
+		event.compressed = image->is_compressed();
+		engine->record_texture_diagnostics_event(event);
+	}
 	if (lwc || lhc) {
 		VS::get_singleton()->texture_set_size_override(texture, lwc, lhc, 0);
 	} else {

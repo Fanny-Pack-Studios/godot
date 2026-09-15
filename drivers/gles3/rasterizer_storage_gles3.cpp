@@ -32,6 +32,7 @@
 
 #include "core/engine.h"
 #include "core/os/os.h"
+#include "core/os/thread.h"
 #include "core/project_settings.h"
 #include "core/threaded_callable_queue.h"
 #include "main/main.h"
@@ -732,6 +733,9 @@ void RasterizerStorageGLES3::texture_set_data(RID p_texture, const Ref<Image> &p
 	ERR_FAIL_COND(texture->format != p_image->get_format());
 	ERR_FAIL_COND(p_image.is_null());
 	ERR_FAIL_COND(texture->type == VS::TEXTURE_TYPE_EXTERNAL);
+	Engine *engine = Engine::get_singleton();
+	bool diagnostics_tracking = engine->is_texture_diagnostics_tracking_enabled();
+	uint64_t upload_started_usec = diagnostics_tracking ? OS::get_singleton()->get_ticks_usec() : 0;
 
 	GLenum type;
 	GLenum format;
@@ -934,6 +938,25 @@ void RasterizerStorageGLES3::texture_set_data(RID p_texture, const Ref<Image> &p
 	}
 
 	texture->mipmaps = mipmaps;
+	if (diagnostics_tracking) {
+		Engine::TextureDiagnosticsEvent event;
+		event.started_usec = upload_started_usec;
+		event.finished_usec = OS::get_singleton()->get_ticks_usec();
+		event.idle_frame = engine->get_idle_frames();
+		event.render_frame = engine->get_frames_drawn();
+		event.thread_id = Thread::get_caller_id();
+		event.data_size_bytes = p_image->get_data().size();
+		event.width = p_image->get_width();
+		event.height = p_image->get_height();
+		event.format = p_image->get_format();
+		event.mipmap_count = p_image->get_mipmap_count();
+		event.operation = "gles3_texture_upload";
+		event.path = texture->path;
+		event.backend = "gles3";
+		event.main_thread = event.thread_id == Thread::get_main_id();
+		event.compressed = p_image->is_compressed();
+		engine->record_texture_diagnostics_event(event);
+	}
 
 	//texture_set_flags(p_texture,texture->flags);
 }

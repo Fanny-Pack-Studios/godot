@@ -867,6 +867,14 @@ public:
 	void clear_shader_compilation_events();
 	void set_shader_compilation_debug_targets(const PoolStringArray &p_targets);
 	PoolStringArray get_shader_compilation_debug_targets() const;
+	void set_texture_diagnostics_tracking_enabled(bool p_enabled);
+	bool is_texture_diagnostics_tracking_enabled() const;
+	Array drain_texture_diagnostics_events();
+	void clear_texture_diagnostics_events();
+	Array drain_frame_diagnostics_events();
+	void clear_frame_diagnostics_events();
+	Array drain_scene_diagnostics_events();
+	void clear_scene_diagnostics_events();
 
 	_Engine();
 };
