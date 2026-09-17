@@ -587,6 +587,12 @@ public:
 	virtual void make_rendering_thread();
 	virtual void swap_buffers();
 
+	virtual bool can_create_worker_gl_context() const;
+	virtual Error create_worker_gl_context(void **r_handle);
+	virtual void make_worker_gl_context_current(void *p_handle);
+	virtual void release_worker_gl_context_current(void *p_handle);
+	virtual void destroy_worker_gl_context(void *p_handle);
+
 	virtual Error shell_open(String p_uri);
 
 	void run();

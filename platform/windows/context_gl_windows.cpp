@@ -34,6 +34,8 @@
 
 #include "context_gl_windows.h"
 
+#include "core/safe_refcount.h"
+
 #include <dwmapi.h>
 
 #define WGL_CONTEXT_MAJOR_VERSION_ARB 0x2091
@@ -237,6 +239,145 @@ ContextGL_Windows::ContextGL_Windows(HWND hwnd, bool p_opengl_3_context) {
 }
 
 ContextGL_Windows::~ContextGL_Windows() {
+}
+
+struct WGLWorkerContext {
+	HWND hwnd;
+	HDC hdc;
+	HGLRC hglrc;
+};
+
+// Uses the same pixel format and context attributes as initialize(), so
+// program binaries are compatible between worker and main contexts.
+bool ContextGL_Windows::can_create_worker_context() const {
+	return opengl_3_context;
+}
+
+Error ContextGL_Windows::create_worker_context(void **r_handle) {
+	memset(r_handle, 0, sizeof(*r_handle));
+
+	static SafeNumeric<int> class_sequence;
+	char class_name[64];
+	snprintf(class_name, sizeof(class_name), "GodotShaderCompileWorker_%d", class_sequence.increment());
+	WNDCLASSEXA wc;
+	ZeroMemory(&wc, sizeof(wc));
+	wc.cbSize = sizeof(WNDCLASSEXA);
+	wc.style = CS_OWNDC;
+	wc.lpfnWndProc = (WNDPROC)DefWindowProcA;
+	wc.hInstance = GetModuleHandle(nullptr);
+	wc.lpszClassName = class_name;
+	ATOM window_class = RegisterClassExA(&wc);
+	if (!window_class) {
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "Shader compile worker: RegisterClassExA failed");
+	}
+
+	WGLWorkerContext *worker = memnew(WGLWorkerContext);
+	worker->hwnd = CreateWindowExA(WS_EX_NOACTIVATE, class_name, "Godot Shader Compile Worker", WS_OVERLAPPED, 0, 0, 32, 32, nullptr, nullptr, GetModuleHandle(nullptr), nullptr);
+	if (!worker->hwnd) {
+		memdelete(worker);
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "Shader compile worker: window creation failed");
+	}
+	worker->hdc = GetDC(worker->hwnd);
+	if (!worker->hdc) {
+		DestroyWindow(worker->hwnd);
+		memdelete(worker);
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "Shader compile worker: GetDC failed");
+	}
+
+	static PIXELFORMATDESCRIPTOR pfd = {
+		sizeof(PIXELFORMATDESCRIPTOR), // Size Of This Pixel Format Descriptor
+		1,
+		PFD_DRAW_TO_WINDOW | // Format Must Support Window
+				PFD_SUPPORT_OPENGL | // Format Must Support OpenGL
+				PFD_DOUBLEBUFFER,
+		(BYTE)PFD_TYPE_RGBA,
+		(BYTE)24,
+		(BYTE)0, (BYTE)0, (BYTE)0, (BYTE)0, (BYTE)0, (BYTE)0, // Color Bits Ignored
+		(BYTE)0, // Alpha Buffer
+		(BYTE)0, // Shift Bit Ignored
+		(BYTE)0, // No Accumulation Buffer
+		(BYTE)0, (BYTE)0, (BYTE)0, (BYTE)0, // Accumulation Bits Ignored
+		(BYTE)24, // 24Bit Z-Buffer (Depth Buffer)
+		(BYTE)0, // No Stencil Buffer
+		(BYTE)0, // No Auxiliary Buffer
+		(BYTE)PFD_MAIN_PLANE, // Main Drawing Layer
+		(BYTE)0, // Reserved
+		0, 0, 0 // Layer Masks Ignored
+	};
+
+	int pixel_format = ChoosePixelFormat(worker->hdc, &pfd);
+	if (!pixel_format || !SetPixelFormat(worker->hdc, pixel_format, &pfd)) {
+		ReleaseDC(worker->hwnd, worker->hdc);
+		DestroyWindow(worker->hwnd);
+		memdelete(worker);
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "Shader compile worker: pixel format failed");
+	}
+
+	// wglCreateContextAttribsARB needs a current context to be resolvable, so
+	// bootstrap with a legacy context first, like initialize() does.
+	HGLRC bootstrap = wglCreateContext(worker->hdc);
+	if (!bootstrap || !wglMakeCurrent(worker->hdc, bootstrap)) {
+		if (bootstrap) {
+			wglDeleteContext(bootstrap);
+		}
+		ReleaseDC(worker->hwnd, worker->hdc);
+		DestroyWindow(worker->hwnd);
+		memdelete(worker);
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "Shader compile worker: bootstrap context failed");
+	}
+
+	int attribs[] = {
+		WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
+		WGL_CONTEXT_MINOR_VERSION_ARB, 3,
+		WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_CORE_PROFILE_BIT_ARB,
+		WGL_CONTEXT_FLAGS_ARB, WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
+		0
+	};
+	PFNWGLCREATECONTEXTATTRIBSARBPROC wglCreateContextAttribsARB =
+			(PFNWGLCREATECONTEXTATTRIBSARBPROC)wglGetProcAddress("wglCreateContextAttribsARB");
+	if (!wglCreateContextAttribsARB) {
+		wglMakeCurrent(worker->hdc, NULL);
+		wglDeleteContext(bootstrap);
+		ReleaseDC(worker->hwnd, worker->hdc);
+		DestroyWindow(worker->hwnd);
+		memdelete(worker);
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "Shader compile worker: wglCreateContextAttribsARB missing");
+	}
+	HGLRC context = wglCreateContextAttribsARB(worker->hdc, 0, attribs);
+	wglMakeCurrent(worker->hdc, NULL);
+	wglDeleteContext(bootstrap);
+	if (!context || !wglMakeCurrent(worker->hdc, context)) {
+		if (context) {
+			wglDeleteContext(context);
+		}
+		ReleaseDC(worker->hwnd, worker->hdc);
+		DestroyWindow(worker->hwnd);
+		memdelete(worker);
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "Shader compile worker: WGL context failed");
+	}
+	worker->hglrc = context;
+
+	*r_handle = worker;
+	return OK;
+}
+
+void ContextGL_Windows::make_worker_context_current(void *p_handle) {
+	WGLWorkerContext *worker = (WGLWorkerContext *)p_handle;
+	wglMakeCurrent(worker->hdc, worker->hglrc);
+}
+
+void ContextGL_Windows::release_worker_context_current(void *p_handle) {
+	WGLWorkerContext *worker = (WGLWorkerContext *)p_handle;
+	wglMakeCurrent(worker->hdc, NULL);
+}
+
+void ContextGL_Windows::destroy_worker_context(void *p_handle) {
+	WGLWorkerContext *worker = (WGLWorkerContext *)p_handle;
+	wglMakeCurrent(worker->hdc, NULL);
+	wglDeleteContext(worker->hglrc);
+	ReleaseDC(worker->hwnd, worker->hdc);
+	DestroyWindow(worker->hwnd);
+	memdelete(worker);
 }
 
 #endif

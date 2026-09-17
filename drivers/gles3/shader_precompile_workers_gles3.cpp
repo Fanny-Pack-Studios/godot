@@ -32,29 +32,18 @@
 
 #include "core/os/os.h"
 
-// GL and X headers come after the core headers: X11 defines None/Status/Bool
-// and friends that clash with engine enums if included first.
-#include <GL/glx.h>
-#include <X11/Xlib.h>
-
-#define GLX_CONTEXT_MAJOR_VERSION_ARB 0x2091
-#define GLX_CONTEXT_MINOR_VERSION_ARB 0x2092
-
-typedef GLXContext (*GLXCREATECONTEXTATTRIBSARBPROC)(Display *, GLXFBConfig, GLXContext, Bool, const int *);
-
 ShaderPrecompileWorkersGLES3 *ShaderPrecompileWorkersGLES3::singleton = nullptr;
 
-thread_local void *ShaderPrecompileWorkersGLES3::worker_display = nullptr;
-thread_local unsigned long ShaderPrecompileWorkersGLES3::worker_window = 0;
-thread_local void *ShaderPrecompileWorkersGLES3::worker_context = nullptr;
+// Opaque handle to the per-worker platform context (own connection/window on
+// X11, own hidden window and device context on Windows), created through the
+// OS::create_worker_gl_context abstraction.
+thread_local void *ShaderPrecompileWorkersGLES3::worker_handle = nullptr;
 
 ShaderPrecompileWorkersGLES3::ShaderPrecompileWorkersGLES3(int p_worker_count) :
 		round_robin(0) {
 	for (int i = 0; i < p_worker_count; i++) {
 		ThreadedCallableQueue<unsigned int> *worker = memnew(ThreadedCallableQueue<unsigned int>);
-		// First job on the worker thread: open its own X connection, create a
-		// hidden window and a GLX context. Sharing one Display across threads
-		// corrupts Xlib even with XInitThreads, so each worker owns its own.
+		// First job on the worker thread: create the platform worker context.
 		worker->enqueue(make_inner_key(i), [this]() { setup_worker(); });
 		inner_queues.push_back(worker);
 	}
@@ -68,72 +57,18 @@ uint64_t ShaderPrecompileWorkersGLES3::make_inner_key(int p_worker_index) {
 }
 
 void ShaderPrecompileWorkersGLES3::setup_worker() {
-	ERR_FAIL_COND_MSG(worker_display != nullptr, "Worker GL context already set up");
-	Display *display = XOpenDisplay(nullptr);
-	ERR_FAIL_COND_MSG(!display, "Shader compile worker: XOpenDisplay failed");
-	int screen = DefaultScreen(display);
-
-	// Same FBConfig and context attributes as the main GLX context
-	// (GLES_3_0_COMPATIBLE branch in ContextGL_X11): program binaries must be
-	// compatible between worker and main contexts.
-	static int visual_attribs[] = {
-		GLX_RENDER_TYPE, GLX_RGBA_BIT,
-		GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
-		GLX_DOUBLEBUFFER, true,
-		GLX_RED_SIZE, 1,
-		GLX_GREEN_SIZE, 1,
-		GLX_BLUE_SIZE, 1,
-		GLX_DEPTH_SIZE, 24,
-		None
-	};
-	static int context_attribs[] = {
-		GLX_CONTEXT_MAJOR_VERSION_ARB, 3,
-		GLX_CONTEXT_MINOR_VERSION_ARB, 3,
-		GLX_CONTEXT_PROFILE_MASK_ARB, GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
-		GLX_CONTEXT_FLAGS_ARB, GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
-		None
-	};
-
-	GLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB =
-			(GLXCREATECONTEXTATTRIBSARBPROC)glXGetProcAddress((const GLubyte *)"glXCreateContextAttribsARB");
-	ERR_FAIL_COND_MSG(!glXCreateContextAttribsARB, "Shader compile worker: glXCreateContextAttribsARB missing");
-
-	int fbcount = 0;
-	GLXFBConfig *fbc = glXChooseFBConfig(display, screen, visual_attribs, &fbcount);
-	ERR_FAIL_COND_MSG(!fbc || fbcount == 0, "Shader compile worker: glXChooseFBConfig failed");
-	GLXFBConfig fbconfig = fbc[0];
-	XVisualInfo *vi = glXGetVisualFromFBConfig(display, fbconfig);
-	XFree(fbc);
-	ERR_FAIL_COND_MSG(!vi, "Shader compile worker: no visual for FBConfig");
-
-	XSetWindowAttributes swa;
-	swa.event_mask = StructureNotifyMask;
-	swa.border_pixel = 0;
-	swa.background_pixmap = None;
-	swa.background_pixel = 0;
-	swa.colormap = XCreateColormap(display, RootWindow(display, vi->screen), vi->visual, AllocNone);
-	Window window = XCreateWindow(display, RootWindow(display, vi->screen), 0, 0, 32, 32, 0, vi->depth, InputOutput, vi->visual, CWBorderPixel | CWColormap | CWEventMask | CWBackPixel, &swa);
-	GLXContext context = glXCreateContextAttribsARB(display, fbconfig, nullptr, true, context_attribs);
-	ERR_FAIL_COND_MSG(!context || !glXMakeCurrent(display, window, context), "Shader compile worker: GLX context failed");
-
-	worker_display = display;
-	worker_window = (unsigned long)window;
-	worker_context = context;
+	ERR_FAIL_COND_MSG(worker_handle != nullptr, "Worker GL context already set up");
+	void *handle = nullptr;
+	ERR_FAIL_COND_MSG(OS::get_singleton()->create_worker_gl_context(&handle) != OK || !handle,
+			"Shader compile worker: platform GL context creation failed");
+	worker_handle = handle;
 }
 
 void ShaderPrecompileWorkersGLES3::teardown_worker() {
-	if (worker_context) {
-		glXMakeCurrent((Display *)worker_display, None, nullptr);
-		glXDestroyContext((Display *)worker_display, (GLXContext)worker_context);
-		worker_context = nullptr;
-	}
-	if (worker_window != 0) {
-		XDestroyWindow((Display *)worker_display, (Window)worker_window);
-		worker_window = 0;
-	}
-	if (worker_display) {
-		XCloseDisplay((Display *)worker_display);
-		worker_display = nullptr;
+	if (worker_handle) {
+		OS::get_singleton()->release_worker_gl_context_current(worker_handle);
+		OS::get_singleton()->destroy_worker_gl_context(worker_handle);
+		worker_handle = nullptr;
 	}
 }
 
@@ -185,6 +120,11 @@ bool ShaderPrecompileWorkersGLES3::create_workers(int p_worker_count) {
 	ERR_FAIL_COND_V(p_worker_count <= 0, false);
 	if (singleton) {
 		return true;
+	}
+	if (!OS::get_singleton()->can_create_worker_gl_context()) {
+		// No worker context support on this platform: keep recipe compilation
+		// on the synchronous path.
+		return false;
 	}
 	singleton = memnew(ShaderPrecompileWorkersGLES3(p_worker_count));
 	return true;

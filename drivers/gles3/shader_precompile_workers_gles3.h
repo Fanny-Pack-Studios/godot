@@ -85,11 +85,14 @@ public:
 	}
 };
 
-// Pool of N shader compile workers, each with its own GLX context on its own
-// X connection. The driver serializes GL compile threads that share one
-// context, so an external worker pool is the only way to compile a large batch
-// of variants in parallel. Programs are transferred to the main context as
-// binaries by the existing SOURCE_QUEUE path in ShaderGLES3.
+// Pool of N shader compile workers, each with its own platform GL context
+// (created via OS::create_worker_gl_context: GLX with an own X connection on
+// X11, WGL with an own hidden window on Windows). The driver serializes GL
+// compile threads that share one context, so an external worker pool is the
+// only way to compile a large batch of variants in parallel. Platforms without
+// worker context support never create the pool, and recipe compilation stays
+// synchronous. Programs are transferred to the main context as binaries by the
+// existing SOURCE_QUEUE path in ShaderGLES3.
 class ShaderPrecompileWorkersGLES3 : public ShaderCompileQueueGLES3 {
 private:
 	Vector<ThreadedCallableQueue<unsigned int> *> inner_queues;
@@ -98,11 +101,9 @@ private:
 	uint32_t round_robin;
 	BinaryMutex queue_mutex;
 
-	// Opaque handles to the per-thread X connection, hidden window and GLX
-	// context (X11 headers stay out of the header to avoid macro clashes).
-	static thread_local void *worker_display;
-	static thread_local unsigned long worker_window;
-	static thread_local void *worker_context;
+	// Opaque handle to the per-thread platform worker context (the platform
+	// headers stay out of the header to avoid macro clashes).
+	static thread_local void *worker_handle;
 
 	void setup_worker();
 	void teardown_worker();
