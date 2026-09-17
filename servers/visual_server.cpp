@@ -2814,7 +2814,9 @@ VisualServer::VisualServer() {
 	// during gameplay; projects that compile synchronously (or warm up during a
 	// loading screen) can turn them off to skip the sync ubershader compiles.
 	GLOBAL_DEF("rendering/gles3/shaders/ubershaders_enabled", true);
+#ifdef DEBUG_ENABLED
 	shader_ubershaders_enabled = GLOBAL_GET("rendering/gles3/shaders/ubershaders_enabled");
+#endif
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/gles3/shaders/shader_compilation_mode", PropertyInfo(Variant::INT, "rendering/gles3/shaders/shader_compilation_mode", PROPERTY_HINT_ENUM, "Synchronous,Asynchronous,Asynchronous + Cache"));
 	GLOBAL_DEF("rendering/gles3/shaders/shader_compilation_mode.mobile", 0);
 	GLOBAL_DEF("rendering/gles3/shaders/shader_compilation_mode.web", 0);
