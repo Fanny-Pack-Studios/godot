@@ -1909,6 +1909,9 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("shader_get_default_texture_param", "shader", "name"), &VisualServer::shader_get_default_texture_param);
 	ClassDB::bind_method(D_METHOD("set_shader_async_hidden_forbidden", "forbidden"), &VisualServer::set_shader_async_hidden_forbidden);
 	ClassDB::bind_method(D_METHOD("shader_precompile_internal_variant", "shader_name", "enabled_conditionals"), &VisualServer::shader_precompile_internal_variant);
+	ClassDB::bind_method(D_METHOD("shader_internal_compile_recipe", "shader_name", "enabled_conditionals"), &VisualServer::shader_internal_compile_recipe);
+	ClassDB::bind_method(D_METHOD("shader_poll_recipes"), &VisualServer::shader_poll_recipes);
+	ClassDB::bind_method(D_METHOD("shader_set_recipe_workers", "worker_count"), &VisualServer::shader_set_recipe_workers);
 	ClassDB::bind_method(D_METHOD("shader_release_resident_program_owner", "owner"), &VisualServer::shader_release_resident_program_owner);
 
 	ClassDB::bind_method(D_METHOD("material_create"), &VisualServer::material_create);
@@ -1916,6 +1919,7 @@ void VisualServer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("material_set_shader", "shader_material", "shader"), &VisualServer::material_set_shader);
 	ClassDB::bind_method(D_METHOD("material_get_shader", "shader_material"), &VisualServer::material_get_shader);
 	ClassDB::bind_method(D_METHOD("material_precompile_shader_variant", "material", "enabled_conditionals"), &VisualServer::material_precompile_shader_variant);
+	ClassDB::bind_method(D_METHOD("material_precompile_recipe", "material", "enabled_conditionals"), &VisualServer::material_precompile_recipe);
 	ClassDB::bind_method(D_METHOD("material_set_param", "material", "parameter", "value"), &VisualServer::material_set_param);
 	ClassDB::bind_method(D_METHOD("material_get_param", "material", "parameter"), &VisualServer::material_get_param);
 	ClassDB::bind_method(D_METHOD("material_get_param_default", "material", "parameter"), &VisualServer::material_get_param_default);
@@ -2666,6 +2670,14 @@ bool VisualServer::is_force_shader_fallbacks_enabled() const {
 void VisualServer::set_force_shader_fallbacks_enabled(bool p_enabled) {
 	force_shader_fallbacks = p_enabled;
 }
+
+bool VisualServer::is_shader_ubershaders_enabled() const {
+	return shader_ubershaders_enabled;
+}
+
+void VisualServer::set_shader_ubershaders_enabled(bool p_enabled) {
+	shader_ubershaders_enabled = p_enabled;
+}
 #endif
 
 VisualServer::VisualServer() {
@@ -2798,6 +2810,13 @@ VisualServer::VisualServer() {
 	}
 #endif
 	GLOBAL_DEF("rendering/gles3/shaders/shader_compilation_mode", 0);
+	// Ubershader fallbacks only make sense when variants compile asynchronously
+	// during gameplay; projects that compile synchronously (or warm up during a
+	// loading screen) can turn them off to skip the sync ubershader compiles.
+	GLOBAL_DEF("rendering/gles3/shaders/ubershaders_enabled", true);
+#ifdef DEBUG_ENABLED
+	shader_ubershaders_enabled = GLOBAL_GET("rendering/gles3/shaders/ubershaders_enabled");
+#endif
 	ProjectSettings::get_singleton()->set_custom_property_info("rendering/gles3/shaders/shader_compilation_mode", PropertyInfo(Variant::INT, "rendering/gles3/shaders/shader_compilation_mode", PROPERTY_HINT_ENUM, "Synchronous,Asynchronous,Asynchronous + Cache"));
 	GLOBAL_DEF("rendering/gles3/shaders/shader_compilation_mode.mobile", 0);
 	GLOBAL_DEF("rendering/gles3/shaders/shader_compilation_mode.web", 0);

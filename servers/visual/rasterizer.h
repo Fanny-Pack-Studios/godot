@@ -268,6 +268,12 @@ public:
 		result["error"] = "unsupported_renderer";
 		return result;
 	}
+	virtual Dictionary material_precompile_recipe(RID p_material, const PoolStringArray &p_enabled_conditionals) {
+		Dictionary result;
+		result["success"] = false;
+		result["error"] = "unsupported_renderer";
+		return result;
+	}
 
 	virtual void material_set_param(RID p_material, const StringName &p_param, const Variant &p_value) = 0;
 	virtual Variant material_get_param(RID p_material, const StringName &p_param) const = 0;
@@ -1315,6 +1321,20 @@ public:
 		result["success"] = false;
 		result["error"] = "unsupported_renderer";
 		return result;
+	}
+	virtual Dictionary shader_internal_compile_recipe(const String &p_shader_name, const PoolStringArray &p_enabled_conditionals) {
+		Dictionary result;
+		result["success"] = false;
+		result["error"] = "unsupported_renderer";
+		return result;
+	}
+	virtual Dictionary shader_poll_recipes() {
+		Dictionary result;
+		result["success"] = false;
+		result["error"] = "unsupported_renderer";
+		return result;
+	}
+	virtual void shader_set_recipe_workers(int p_worker_count) {
 	}
 	virtual Dictionary shader_release_resident_program_owner(const String &p_owner) {
 		Dictionary result;

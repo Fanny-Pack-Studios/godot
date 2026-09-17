@@ -3903,6 +3903,40 @@ void OS_X11::swap_buffers() {
 #endif
 }
 
+bool OS_X11::can_create_worker_gl_context() const {
+#if defined(OPENGL_ENABLED)
+	return context_gl->can_create_worker_context();
+#else
+	return false;
+#endif
+}
+
+Error OS_X11::create_worker_gl_context(void **r_handle) {
+#if defined(OPENGL_ENABLED)
+	return ContextGL_X11::create_worker_context(r_handle);
+#else
+	return ERR_UNAVAILABLE;
+#endif
+}
+
+void OS_X11::make_worker_gl_context_current(void *p_handle) {
+#if defined(OPENGL_ENABLED)
+	ContextGL_X11::make_worker_context_current(p_handle);
+#endif
+}
+
+void OS_X11::release_worker_gl_context_current(void *p_handle) {
+#if defined(OPENGL_ENABLED)
+	ContextGL_X11::release_worker_context_current(p_handle);
+#endif
+}
+
+void OS_X11::destroy_worker_gl_context(void *p_handle) {
+#if defined(OPENGL_ENABLED)
+	ContextGL_X11::destroy_worker_context(p_handle);
+#endif
+}
+
 void OS_X11::alert(const String &p_alert, const String &p_title) {
 	if (is_no_window_mode_enabled()) {
 		print_line("ALERT: " + p_title + ": " + p_alert);

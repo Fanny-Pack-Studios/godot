@@ -594,6 +594,17 @@ public:
 	virtual void make_rendering_thread();
 	virtual void swap_buffers();
 
+	// Worker GL contexts: offscreen contexts (one hidden window and connection
+	// per worker) for background shader compilation on their own threads.
+	// Handles are opaque and platform-owned; only GLES 3 contexts support them.
+	// Platforms without support keep the defaults and the driver falls back to
+	// synchronous compilation.
+	virtual bool can_create_worker_gl_context() const { return false; }
+	virtual Error create_worker_gl_context(void **r_handle) { return ERR_UNAVAILABLE; }
+	virtual void make_worker_gl_context_current(void *p_handle) {}
+	virtual void release_worker_gl_context_current(void *p_handle) {}
+	virtual void destroy_worker_gl_context(void *p_handle) {}
+
 	virtual void set_native_icon(const String &p_filename);
 	virtual void set_icon(const Ref<Image> &p_icon);
 

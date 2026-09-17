@@ -302,5 +302,117 @@ ContextGL_X11::~ContextGL_X11() {
 	memdelete(p);
 }
 
+struct GLXWorkerContext {
+	::Display *display;
+	::Window window;
+	::GLXContext context;
+};
+
+// Same FBConfig and context attributes as the main GLX context
+// (GLES_3_0_COMPATIBLE branch in initialize): program binaries must be
+// compatible between worker and main contexts.
+bool ContextGL_X11::can_create_worker_context() const {
+	return context_type == GLES_3_0_COMPATIBLE;
+}
+
+Error ContextGL_X11::create_worker_context(void **r_handle) {
+	memset(r_handle, 0, sizeof(*r_handle));
+	GLXWorkerContext *worker = memnew(GLXWorkerContext);
+	worker->display = XOpenDisplay(nullptr);
+	if (!worker->display) {
+		memdelete(worker);
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "Shader compile worker: XOpenDisplay failed");
+	}
+	int screen = DefaultScreen(worker->display);
+
+	static int visual_attribs[] = {
+		GLX_RENDER_TYPE, GLX_RGBA_BIT,
+		GLX_DRAWABLE_TYPE, GLX_WINDOW_BIT,
+		GLX_DOUBLEBUFFER, true,
+		GLX_RED_SIZE, 1,
+		GLX_GREEN_SIZE, 1,
+		GLX_BLUE_SIZE, 1,
+		GLX_DEPTH_SIZE, 24,
+		None
+	};
+	static int context_attribs[] = {
+		GLX_CONTEXT_MAJOR_VERSION_ARB, 3,
+		GLX_CONTEXT_MINOR_VERSION_ARB, 3,
+		GLX_CONTEXT_PROFILE_MASK_ARB, GLX_CONTEXT_CORE_PROFILE_BIT_ARB,
+		GLX_CONTEXT_FLAGS_ARB, GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB,
+		None
+	};
+
+	int fbcount = 0;
+	GLXFBConfig *fbc = glXChooseFBConfig(worker->display, screen, visual_attribs, &fbcount);
+	if (!fbc || fbcount == 0) {
+		if (fbc) {
+			XFree(fbc);
+		}
+		XCloseDisplay(worker->display);
+		memdelete(worker);
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "Shader compile worker: glXChooseFBConfig failed");
+	}
+	GLXFBConfig fbconfig = fbc[0];
+	XVisualInfo *vi = glXGetVisualFromFBConfig(worker->display, fbconfig);
+	XFree(fbc);
+	if (!vi) {
+		XCloseDisplay(worker->display);
+		memdelete(worker);
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "Shader compile worker: no visual for FBConfig");
+	}
+
+	XSetWindowAttributes swa;
+	swa.event_mask = StructureNotifyMask;
+	swa.border_pixel = 0;
+	swa.background_pixmap = None;
+	swa.background_pixel = 0;
+	swa.colormap = XCreateColormap(worker->display, RootWindow(worker->display, vi->screen), vi->visual, AllocNone);
+	worker->window = XCreateWindow(worker->display, RootWindow(worker->display, vi->screen), 0, 0, 32, 32, 0, vi->depth, InputOutput, vi->visual, CWBorderPixel | CWColormap | CWEventMask | CWBackPixel, &swa);
+	XFree(vi);
+
+	GLXCREATECONTEXTATTRIBSARBPROC glXCreateContextAttribsARB =
+			(GLXCREATECONTEXTATTRIBSARBPROC)glXGetProcAddress((const GLubyte *)"glXCreateContextAttribsARB");
+	if (!glXCreateContextAttribsARB) {
+		XDestroyWindow(worker->display, worker->window);
+		XCloseDisplay(worker->display);
+		memdelete(worker);
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "Shader compile worker: glXCreateContextAttribsARB missing");
+	}
+	worker->context = glXCreateContextAttribsARB(worker->display, fbconfig, nullptr, true, context_attribs);
+	if (!worker->context || !glXMakeCurrent(worker->display, worker->window, worker->context)) {
+		if (worker->context) {
+			glXDestroyContext(worker->display, worker->context);
+		}
+		XDestroyWindow(worker->display, worker->window);
+		XCloseDisplay(worker->display);
+		memdelete(worker);
+		ERR_FAIL_V_MSG(ERR_CANT_CREATE, "Shader compile worker: GLX context failed");
+	}
+
+	XSync(worker->display, False);
+	*r_handle = worker;
+	return OK;
+}
+
+void ContextGL_X11::make_worker_context_current(void *p_handle) {
+	GLXWorkerContext *worker = (GLXWorkerContext *)p_handle;
+	glXMakeCurrent(worker->display, worker->window, worker->context);
+}
+
+void ContextGL_X11::release_worker_context_current(void *p_handle) {
+	GLXWorkerContext *worker = (GLXWorkerContext *)p_handle;
+	glXMakeCurrent(worker->display, None, nullptr);
+}
+
+void ContextGL_X11::destroy_worker_context(void *p_handle) {
+	GLXWorkerContext *worker = (GLXWorkerContext *)p_handle;
+	glXMakeCurrent(worker->display, None, nullptr);
+	glXDestroyContext(worker->display, worker->context);
+	XDestroyWindow(worker->display, worker->window);
+	XCloseDisplay(worker->display);
+	memdelete(worker);
+}
+
 #endif
 #endif

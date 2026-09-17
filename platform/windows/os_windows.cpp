@@ -3641,6 +3641,26 @@ void OS_Windows::swap_buffers() {
 	gl_context->swap_buffers();
 }
 
+bool OS_Windows::can_create_worker_gl_context() const {
+	return gl_context->can_create_worker_context();
+}
+
+Error OS_Windows::create_worker_gl_context(void **r_handle) {
+	return ContextGL_Windows::create_worker_context(r_handle);
+}
+
+void OS_Windows::make_worker_gl_context_current(void *p_handle) {
+	ContextGL_Windows::make_worker_context_current(p_handle);
+}
+
+void OS_Windows::release_worker_gl_context_current(void *p_handle) {
+	ContextGL_Windows::release_worker_context_current(p_handle);
+}
+
+void OS_Windows::destroy_worker_gl_context(void *p_handle) {
+	ContextGL_Windows::destroy_worker_context(p_handle);
+}
+
 void OS_Windows::force_process_input() {
 	process_events(); // get rid of pending events
 }
