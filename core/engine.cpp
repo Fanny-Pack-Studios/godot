@@ -33,9 +33,13 @@
 #include "core/authors.gen.h"
 #include "core/donors.gen.h"
 #include "core/license.gen.h"
+#include "core/os/thread.h"
 #include "core/version.h"
 
 static const int MAX_QUEUED_SHADER_COMPILATION_EVENTS = 4096;
+static const int MAX_QUEUED_TEXTURE_DIAGNOSTICS_EVENTS = 16384;
+static const int MAX_QUEUED_FRAME_DIAGNOSTICS_EVENTS = 4096;
+static const int MAX_QUEUED_SCENE_DIAGNOSTICS_EVENTS = 32768;
 
 Engine::ShaderCompilationEvent::ShaderCompilationEvent() {
 	compilation_id = 0;
@@ -46,12 +50,49 @@ Engine::ShaderCompilationEvent::ShaderCompilationEvent() {
 	variant = 0;
 	custom_code_id = 0;
 	custom_code_version = 0;
+	material_rid = 0;
+	object_id = 0;
 	debug_target = false;
 	cache_eligible = false;
 	cache_lookup_attempted = false;
 	cache_hit = false;
 	resident_program_hit = false;
 	success = true;
+}
+
+Engine::SceneDiagnosticsEvent::SceneDiagnosticsEvent() {
+	started_usec = 0;
+	finished_usec = 0;
+	idle_frame = 0;
+	thread_id = 0;
+	node_count = 0;
+	property_count = 0;
+	main_thread = false;
+}
+
+Engine::TextureDiagnosticsEvent::TextureDiagnosticsEvent() {
+	event_id = 0;
+	started_usec = 0;
+	finished_usec = 0;
+	idle_frame = 0;
+	render_frame = 0;
+	thread_id = 0;
+	data_size_bytes = 0;
+	width = 0;
+	height = 0;
+	format = 0;
+	mipmap_count = 0;
+	main_thread = false;
+	compressed = false;
+	success = true;
+}
+
+Engine::FrameDiagnosticsEvent::FrameDiagnosticsEvent() {
+	started_usec = 0;
+	finished_usec = 0;
+	idle_frame = 0;
+	thread_id = 0;
+	main_thread = false;
 }
 
 void Engine::set_iterations_per_second(int p_ips) {
@@ -287,6 +328,8 @@ Array Engine::drain_shader_compilation_events() {
 		item["variant"] = event.variant;
 		item["custom_code_id"] = event.custom_code_id;
 		item["custom_code_version"] = event.custom_code_version;
+		item["material_rid"] = event.material_rid;
+		item["object_id"] = event.object_id;
 		item["phase"] = event.phase;
 		item["operation"] = event.operation;
 		item["backend"] = event.backend;
@@ -294,6 +337,7 @@ Array Engine::drain_shader_compilation_events() {
 		item["source"] = event.source;
 		item["shader_name"] = event.shader_name;
 		item["material_path"] = event.material_path;
+		item["custom_code_hash"] = event.custom_code_hash;
 		item["debug_target"] = event.debug_target;
 		item["cache_eligible"] = event.cache_eligible;
 		item["cache_lookup_attempted"] = event.cache_lookup_attempted;
@@ -368,6 +412,161 @@ bool Engine::is_shader_compilation_debug_target(const String &p_material_path) c
 		}
 	}
 	return false;
+}
+
+void Engine::set_texture_diagnostics_tracking_enabled(bool p_enabled) {
+	if (texture_diagnostics_tracking_enabled.is_set() == p_enabled) {
+		return;
+	}
+	texture_diagnostics_tracking_enabled.set_to(p_enabled);
+	clear_texture_diagnostics_events();
+	clear_frame_diagnostics_events();
+	clear_scene_diagnostics_events();
+}
+
+bool Engine::is_texture_diagnostics_tracking_enabled() const {
+	return texture_diagnostics_tracking_enabled.is_set();
+}
+
+uint64_t Engine::record_texture_diagnostics_event(const TextureDiagnosticsEvent &p_event) {
+	if (!texture_diagnostics_tracking_enabled.is_set()) {
+		return 0;
+	}
+	TextureDiagnosticsEvent event = p_event;
+	if (event.event_id == 0) {
+		event.event_id = texture_diagnostics_sequence.increment();
+	}
+	MutexLock lock(texture_diagnostics_events_mutex);
+	if (texture_diagnostics_events.size() >= MAX_QUEUED_TEXTURE_DIAGNOSTICS_EVENTS) {
+		texture_diagnostics_events.remove(0);
+	}
+	texture_diagnostics_events.push_back(event);
+	return event.event_id;
+}
+
+Array Engine::drain_texture_diagnostics_events() {
+	Array result;
+	MutexLock lock(texture_diagnostics_events_mutex);
+	result.resize(texture_diagnostics_events.size());
+	for (int i = 0; i < texture_diagnostics_events.size(); i++) {
+		const TextureDiagnosticsEvent &event = texture_diagnostics_events[i];
+		Dictionary item;
+		item["event_id"] = event.event_id;
+		item["started_usec"] = event.started_usec;
+		item["finished_usec"] = event.finished_usec;
+		item["duration_usec"] = event.finished_usec - event.started_usec;
+		item["idle_frame"] = event.idle_frame;
+		item["render_frame"] = event.render_frame;
+		item["thread_id"] = event.thread_id;
+		item["data_size_bytes"] = event.data_size_bytes;
+		item["width"] = event.width;
+		item["height"] = event.height;
+		item["format"] = event.format;
+		item["mipmap_count"] = event.mipmap_count;
+		item["operation"] = event.operation;
+		item["path"] = event.path;
+		item["backend"] = event.backend;
+		item["main_thread"] = event.main_thread;
+		item["compressed"] = event.compressed;
+		item["success"] = event.success;
+		result[i] = item;
+	}
+	texture_diagnostics_events.clear();
+	return result;
+}
+
+void Engine::clear_texture_diagnostics_events() {
+	MutexLock lock(texture_diagnostics_events_mutex);
+	texture_diagnostics_events.clear();
+}
+
+void Engine::record_frame_diagnostics_event(const String &p_phase, uint64_t p_started_usec, uint64_t p_finished_usec) {
+	if (!texture_diagnostics_tracking_enabled.is_set()) {
+		return;
+	}
+	FrameDiagnosticsEvent event;
+	event.started_usec = p_started_usec;
+	event.finished_usec = p_finished_usec;
+	event.idle_frame = get_idle_frames();
+	event.thread_id = Thread::get_caller_id();
+	event.phase = p_phase;
+	event.main_thread = event.thread_id == Thread::get_main_id();
+	MutexLock lock(frame_diagnostics_events_mutex);
+	if (frame_diagnostics_events.size() >= MAX_QUEUED_FRAME_DIAGNOSTICS_EVENTS) {
+		frame_diagnostics_events.remove(0);
+	}
+	frame_diagnostics_events.push_back(event);
+}
+
+Array Engine::drain_frame_diagnostics_events() {
+	Array result;
+	MutexLock lock(frame_diagnostics_events_mutex);
+	result.resize(frame_diagnostics_events.size());
+	for (int i = 0; i < frame_diagnostics_events.size(); i++) {
+		const FrameDiagnosticsEvent &event = frame_diagnostics_events[i];
+		Dictionary item;
+		item["started_usec"] = event.started_usec;
+		item["finished_usec"] = event.finished_usec;
+		item["duration_usec"] = event.finished_usec - event.started_usec;
+		item["idle_frame"] = event.idle_frame;
+		item["thread_id"] = event.thread_id;
+		item["phase"] = event.phase;
+		item["main_thread"] = event.main_thread;
+		result[i] = item;
+	}
+	frame_diagnostics_events.clear();
+	return result;
+}
+
+void Engine::clear_frame_diagnostics_events() {
+	MutexLock lock(frame_diagnostics_events_mutex);
+	frame_diagnostics_events.clear();
+}
+
+void Engine::record_scene_diagnostics_event(const SceneDiagnosticsEvent &p_event) {
+	if (!texture_diagnostics_tracking_enabled.is_set()) {
+		return;
+	}
+	SceneDiagnosticsEvent event = p_event;
+	event.idle_frame = get_idle_frames();
+	event.thread_id = Thread::get_caller_id();
+	event.main_thread = event.thread_id == Thread::get_main_id();
+	MutexLock lock(scene_diagnostics_events_mutex);
+	if (scene_diagnostics_events.size() >= MAX_QUEUED_SCENE_DIAGNOSTICS_EVENTS) {
+		scene_diagnostics_events.remove(0);
+	}
+	scene_diagnostics_events.push_back(event);
+}
+
+Array Engine::drain_scene_diagnostics_events() {
+	Array result;
+	MutexLock lock(scene_diagnostics_events_mutex);
+	result.resize(scene_diagnostics_events.size());
+	for (int i = 0; i < scene_diagnostics_events.size(); i++) {
+		const SceneDiagnosticsEvent &event = scene_diagnostics_events[i];
+		Dictionary item;
+		item["started_usec"] = event.started_usec;
+		item["finished_usec"] = event.finished_usec;
+		item["duration_usec"] = event.finished_usec - event.started_usec;
+		item["idle_frame"] = event.idle_frame;
+		item["thread_id"] = event.thread_id;
+		item["node_count"] = event.node_count;
+		item["property_count"] = event.property_count;
+		item["operation"] = event.operation;
+		item["scene_path"] = event.scene_path;
+		item["node_path"] = event.node_path;
+		item["node_class"] = event.node_class;
+		item["script_path"] = event.script_path;
+		item["main_thread"] = event.main_thread;
+		result[i] = item;
+	}
+	scene_diagnostics_events.clear();
+	return result;
+}
+
+void Engine::clear_scene_diagnostics_events() {
+	MutexLock lock(scene_diagnostics_events_mutex);
+	scene_diagnostics_events.clear();
 }
 
 void Engine::add_singleton(const Singleton &p_singleton) {
