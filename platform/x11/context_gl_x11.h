@@ -75,6 +75,16 @@ public:
 
 	Error initialize();
 
+	// Offscreen GL 3.3 contexts for shader compilation workers. Each worker gets
+	// its own X connection and hidden window, because sharing one Display
+	// across threads corrupts Xlib even with XInitThreads. Handles are opaque
+	// pointers to structs defined in the implementation.
+	bool can_create_worker_context() const;
+	static Error create_worker_context(void **r_handle);
+	static void make_worker_context_current(void *p_handle);
+	static void release_worker_context_current(void *p_handle);
+	static void destroy_worker_context(void *p_handle);
+
 	void set_use_vsync(bool p_use);
 	bool is_using_vsync() const;
 

@@ -133,6 +133,9 @@ public:
 	FUNC2(shader_remove_custom_define, RID, const String &)
 
 	FUNC1(set_shader_async_hidden_forbidden, bool)
+	FUNC2R(Dictionary, shader_internal_compile_recipe, const String &, const PoolStringArray &)
+	FUNC0R(Dictionary, shader_poll_recipes)
+	FUNC1(shader_set_recipe_workers, int)
 	FUNC2R(Dictionary, shader_precompile_internal_variant, const String &, const PoolStringArray &)
 	FUNC1R(Dictionary, shader_release_resident_program_owner, const String &)
 
@@ -144,6 +147,7 @@ public:
 	FUNC2(material_set_shader, RID, RID)
 	FUNC1RC(RID, material_get_shader, RID)
 	FUNC2R(Dictionary, material_precompile_shader_variant, RID, const PoolStringArray &)
+	FUNC2R(Dictionary, material_precompile_recipe, RID, const PoolStringArray &)
 
 	FUNC3(material_set_param, RID, const StringName &, const Variant &)
 	FUNC2RC(Variant, material_get_param, RID, const StringName &)

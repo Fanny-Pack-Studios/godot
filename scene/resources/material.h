@@ -69,6 +69,7 @@ public:
 
 	virtual RID get_rid() const;
 	Dictionary precompile_shader_variant(const PoolStringArray &p_enabled_conditionals);
+	Dictionary precompile_recipe(const PoolStringArray &p_enabled_conditionals);
 
 	virtual Shader::Mode get_shader_mode() const = 0;
 	Material();

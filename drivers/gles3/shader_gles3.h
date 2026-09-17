@@ -36,8 +36,10 @@
 #include "core/map.h"
 #include "core/math/camera_matrix.h"
 #include "core/safe_refcount.h"
+#include "core/list.h"
 #include "core/self_list.h"
 #include "core/set.h"
+#include "core/threaded_callable_queue.h"
 #include "core/variant.h"
 
 #include "platform_config.h"
@@ -52,6 +54,20 @@
 template <class K>
 class ThreadedCallableQueue;
 class ShaderCacheGLES3;
+
+// Compile queue abstraction: ShaderGLES3 hands compile jobs over either to a
+// single secondary-context queue or to the external worker pool.
+class ShaderCompileQueueGLES3 {
+public:
+	virtual void enqueue_compile(unsigned int p_key, const ThreadedCallableQueue<unsigned int>::Job &p_job) = 0;
+	virtual void cancel_compile(unsigned int p_key) = 0;
+	// Worker side: publish the program binary for a queued job.
+	virtual void complete_job(unsigned int p_key, GLenum p_format, const PoolByteArray &p_data) = 0;
+	// Returns true when the job finished (success or error); on success the
+	// binary is copied to r_format/r_data.
+	virtual bool poll_job_result(unsigned int p_key, GLenum *r_format, PoolByteArray *r_data) = 0;
+	virtual ~ShaderCompileQueueGLES3() {}
+};
 
 class ShaderGLES3 {
 protected:
@@ -92,6 +108,9 @@ protected:
 	};
 
 	virtual int get_ubershader_flags_uniform() const { return -1; }
+	// True when the project still uses the ubershader fallback machinery AND
+	// this shader family has the ubershader flags uniform.
+	bool ubershaders_active() const;
 
 private:
 	//@TODO Optimize to a fixed set of shader pools and use a LRU
@@ -130,6 +149,7 @@ public:
 	static ThreadedCallableQueue<GLuint> *cache_write_queue;
 
 	static ThreadedCallableQueue<GLuint> *compile_queue; // Non-null if using queued asynchronous compilation (via secondary context)
+	static ShaderCompileQueueGLES3 *recipe_compile_queue; // Non-null while the recipe worker pool is up
 	static bool parallel_compile_supported; // True if using natively supported asyncrhonous compilation
 
 	static bool async_hidden_forbidden;
@@ -141,6 +161,20 @@ public:
 	static bool log_active_async_compiles_count;
 #endif
 	static uint64_t current_frame;
+
+	// Recipe compilation state (main thread only, like pending_precompiles).
+	struct RecipeJob {
+		ShaderGLES3 *owner;
+		String program_key;
+		unsigned int job_id;
+		uint64_t handle;
+		String material_path;
+		String shader_name;
+	};
+	static Vector<RecipeJob> recipe_jobs;
+	static uint64_t recipe_handle_sequence;
+	static uint32_t recipe_job_id_sequence;
+	HashMap<String, uint32_t> recipe_jobs_in_flight; // program key -> job id
 
 	static void advance_async_shaders_compilation();
 
@@ -308,9 +342,24 @@ private:
 	int base_material_tex_index;
 
 	Version *get_current_version(bool &r_async_forbidden);
+
+	// Assembled GLSL sources for one version of this family. The string
+	// arrays point into the owned CharString list, which must outlive every
+	// use of the arrays (glShaderSource copies, the compile job copies the
+	// sources into its own buffers).
+	struct CompileSourceBuild {
+		LocalVector<const char *> strings_vertex;
+		LocalVector<const char *> strings_fragment;
+		List<CharString> owned_strings;
+		Vector<String> diagnostic_enabled_conditionals;
+		Vector<String> diagnostic_custom_defines;
+	};
+	bool build_compile_sources(const VersionKey &p_key, const CustomCode *p_cc, bool p_track_conditionals, bool p_track_defines, CompileSourceBuild &r_out) const;
+	String compute_resident_program_key(const CompileSourceBuild &p_src) const;
+
 	// These will run on the shader compile thread if using que compile queue approach to async.
 	void _set_source(Version::Ids p_ids, const LocalVector<const char *> &p_vertex_strings, const LocalVector<const char *> &p_fragment_strings) const;
-	bool _complete_compile(Version::Ids p_ids, bool p_retrievable) const;
+	bool _complete_compile(Version::Ids p_ids, bool p_retrievable, uint32_t p_conditional_mask) const;
 	bool _complete_link(Version::Ids p_ids, GLenum *r_program_format = nullptr, PoolByteArray *r_program_binary = nullptr) const;
 	// ---
 	static void _log_active_compiles();
@@ -450,6 +499,11 @@ public:
 	void set_custom_shader_code(uint32_t p_code_id, const String &p_vertex, const String &p_vertex_globals, const String &p_fragment, const String &p_light, const String &p_fragment_globals, const String &p_uniforms, const Vector<StringName> &p_texture_uniforms, const Vector<CharString> &p_custom_defines, AsyncMode p_async_mode);
 	void set_custom_shader(uint32_t p_code_id, const String &p_material_path = String());
 	Dictionary precompile_custom_shader_variant(uint32_t p_code_id, const PoolStringArray &p_enabled_conditionals, const String &p_material_path = String());
+	Dictionary submit_recipe(uint32_t p_code_id, const PoolStringArray &p_enabled_conditionals, const String &p_material_path = String());
+	bool consume_recipe_binary(const String &p_program_key, GLenum p_format, const PoolByteArray &p_data);
+	static Dictionary poll_recipe_compiles();
+	void _cancel_pending_recipe_jobs();
+	void register_resident_program_ids(const String &p_program_key, const Version::Ids &p_ids);
 	Dictionary release_resident_program_owner(const String &p_owner);
 	String get_public_shader_name() const { return get_shader_name(); }
 	void free_custom_shader(uint32_t p_code_id);
@@ -460,7 +514,7 @@ public:
 
 	virtual void init() = 0;
 	void init_async_compilation();
-	bool is_async_compilation_supported();
+	bool is_async_compilation_supported() const;
 	void finish();
 
 	void set_base_material_tex_index(int p_idx);
