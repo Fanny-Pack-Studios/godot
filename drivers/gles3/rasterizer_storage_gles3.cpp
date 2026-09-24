@@ -6673,6 +6673,8 @@ void RasterizerStorageGLES3::_particles_process(Particles *p_particles, float p_
 void RasterizerStorageGLES3::update_particles() {
 	Engine *diagnostics_engine = Engine::get_singleton();
 	const bool track_particles = diagnostics_engine && diagnostics_engine->is_texture_diagnostics_tracking_enabled();
+	// Diagnostic cap for comparing particle startup cost without editing scenes.
+	static const String preprocess_override = OS::get_singleton()->get_environment("RYA_PARTICLES_PREPROCESS_MAX_SECONDS");
 	glEnable(GL_RASTERIZER_DISCARD);
 
 	while (particle_update_list.first()) {
@@ -6680,6 +6682,7 @@ void RasterizerStorageGLES3::update_particles() {
 
 		Particles *particles = particle_update_list.first()->self();
 		const uint64_t particle_started_usec = track_particles ? OS::get_singleton()->get_ticks_usec() : 0;
+		const float effective_preprocess_time = preprocess_override.empty() ? particles->pre_process_time : MIN(particles->pre_process_time, MAX(0.0f, preprocess_override.to_float()));
 		uint64_t preprocess_started_usec = 0;
 		uint64_t preprocess_elapsed_usec = 0;
 		int preprocess_steps = 0;
@@ -6789,7 +6792,7 @@ void RasterizerStorageGLES3::update_particles() {
 
 		bool zero_time_scale = Engine::get_singleton()->get_time_scale() <= 0.0;
 
-		if (particles->clear && particles->pre_process_time > 0.0) {
+		if (particles->clear && effective_preprocess_time > 0.0) {
 			preprocess_started_usec = track_particles ? OS::get_singleton()->get_ticks_usec() : 0;
 			float frame_time;
 			if (particles->fixed_fps > 0) {
@@ -6798,7 +6801,7 @@ void RasterizerStorageGLES3::update_particles() {
 				frame_time = 1.0 / 30.0;
 			}
 
-			float todo = particles->pre_process_time;
+			float todo = effective_preprocess_time;
 
 			while (todo >= 0) {
 				_particles_process(particles, frame_time);
@@ -6864,7 +6867,7 @@ void RasterizerStorageGLES3::update_particles() {
 			const uint64_t particle_finished_usec = OS::get_singleton()->get_ticks_usec();
 			if (particle_finished_usec - particle_started_usec >= 1000) {
 				const String material_path = material ? material->path : String();
-				const String details = String(":amount=") + itos(particles->amount) + ":preprocess=" + String::num(particles->pre_process_time) + ":preprocess_steps=" + itos(preprocess_steps) + ":fixed_steps=" + itos(fixed_steps) + ":material=" + material_path;
+				const String details = String(":amount=") + itos(particles->amount) + ":preprocess=" + String::num(particles->pre_process_time) + ":effective_preprocess=" + String::num(effective_preprocess_time) + ":preprocess_steps=" + itos(preprocess_steps) + ":fixed_steps=" + itos(fixed_steps) + ":material=" + material_path;
 				diagnostics_engine->record_frame_diagnostics_event(String("render_particle_update") + details, particle_started_usec, particle_finished_usec);
 				if (preprocess_elapsed_usec >= 1000) {
 					const uint64_t preprocess_finished_usec = preprocess_started_usec + preprocess_elapsed_usec;
