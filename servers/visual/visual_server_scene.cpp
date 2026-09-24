@@ -30,6 +30,8 @@
 
 #include "visual_server_scene.h"
 
+#include "core/engine.h"
+
 #include "core/math/transform_interpolator.h"
 #include "core/os/os.h"
 #include "visual_server_globals.h"
@@ -4421,7 +4423,22 @@ void VisualServerScene::_update_dirty_instance(Instance *p_instance) {
 }
 
 void VisualServerScene::update_dirty_instances() {
+	Engine *diagnostics_engine = Engine::get_singleton();
+	const bool track = diagnostics_engine && diagnostics_engine->is_texture_diagnostics_tracking_enabled();
+	uint64_t phase_started_usec = track ? OS::get_singleton()->get_ticks_usec() : 0;
+	auto record_phase = [&](const char *p_phase) {
+		if (!track) {
+			return;
+		}
+		const uint64_t finished_usec = OS::get_singleton()->get_ticks_usec();
+		if (finished_usec - phase_started_usec >= 1000) {
+			diagnostics_engine->record_frame_diagnostics_event(p_phase, phase_started_usec, finished_usec);
+		}
+		phase_started_usec = finished_usec;
+	};
+
 	VSG::storage->update_dirty_resources();
+	record_phase("render_dirty_resources");
 
 	// this is just to get access to scenario so we can update the spatial partitioning scheme
 	Scenario *scenario = nullptr;
@@ -4432,16 +4449,33 @@ void VisualServerScene::update_dirty_instances() {
 	while (_instance_update_list.first()) {
 		_update_dirty_instance(_instance_update_list.first()->self());
 	}
+	record_phase("render_dirty_instances");
 
 	if (scenario) {
 		scenario->sps->update();
 	}
+	record_phase("render_dirty_spatial_partition");
 
 	_blob_shadows.update();
+	record_phase("render_dirty_blob_shadows");
 }
 
 bool VisualServerScene::free(RID p_rid) {
+	Engine *diagnostics_engine = Engine::get_singleton();
+	const bool track = diagnostics_engine && diagnostics_engine->is_texture_diagnostics_tracking_enabled();
+	const uint64_t started_usec = track ? OS::get_singleton()->get_ticks_usec() : 0;
+	const char *resource_kind = nullptr;
+	auto record_free = [&]() {
+		if (!track || !resource_kind) {
+			return;
+		}
+		const uint64_t finished_usec = OS::get_singleton()->get_ticks_usec();
+		if (finished_usec - started_usec >= 1000) {
+			diagnostics_engine->record_frame_diagnostics_event(resource_kind, started_usec, finished_usec);
+		}
+	};
 	if (camera_owner.owns(p_rid)) {
+		resource_kind = "render_free_scene_camera";
 		Camera *camera = camera_owner.get(p_rid);
 
 		_blob_shadows.delete_focus(camera->blob_focus_handle);
@@ -4450,6 +4484,7 @@ bool VisualServerScene::free(RID p_rid) {
 		camera_owner.free(p_rid);
 		memdelete(camera);
 	} else if (scenario_owner.owns(p_rid)) {
+		resource_kind = "render_free_scene_scenario";
 		Scenario *scenario = scenario_owner.get(p_rid);
 
 		while (scenario->instances.first()) {
@@ -4461,6 +4496,7 @@ bool VisualServerScene::free(RID p_rid) {
 		memdelete(scenario);
 
 	} else if (instance_owner.owns(p_rid)) {
+		resource_kind = "render_free_scene_instance";
 		// delete the instance
 
 		update_dirty_instances();
@@ -4480,31 +4516,38 @@ bool VisualServerScene::free(RID p_rid) {
 		memdelete(instance);
 
 	} else if (room_owner.owns(p_rid)) {
+		resource_kind = "render_free_scene_room";
 		Room *room = room_owner.get(p_rid);
 		room_owner.free(p_rid);
 		memdelete(room);
 	} else if (portal_owner.owns(p_rid)) {
+		resource_kind = "render_free_scene_portal";
 		Portal *portal = portal_owner.get(p_rid);
 		portal_owner.free(p_rid);
 		memdelete(portal);
 	} else if (ghost_owner.owns(p_rid)) {
+		resource_kind = "render_free_scene_ghost";
 		Ghost *ghost = ghost_owner.get(p_rid);
 		ghost_owner.free(p_rid);
 		memdelete(ghost);
 	} else if (roomgroup_owner.owns(p_rid)) {
+		resource_kind = "render_free_scene_roomgroup";
 		RoomGroup *roomgroup = roomgroup_owner.get(p_rid);
 		roomgroup_owner.free(p_rid);
 		memdelete(roomgroup);
 	} else if (occluder_instance_owner.owns(p_rid)) {
+		resource_kind = "render_free_scene_occluder_instance";
 		OccluderInstance *occ_inst = occluder_instance_owner.get(p_rid);
 		occluder_instance_owner.free(p_rid);
 		memdelete(occ_inst);
 	} else if (occluder_resource_owner.owns(p_rid)) {
+		resource_kind = "render_free_scene_occluder_resource";
 		OccluderResource *occ_res = occluder_resource_owner.get(p_rid);
 		occ_res->destroy(_portal_resources);
 		occluder_resource_owner.free(p_rid);
 		memdelete(occ_res);
 	} else if (capsule_shadow_owner.owns(p_rid)) {
+		resource_kind = "render_free_scene_capsule_shadow";
 		CapsuleShadow *capsule = capsule_shadow_owner.get(p_rid);
 		capsule_shadow_owner.free(p_rid);
 		if (capsule->handle) {
@@ -4512,6 +4555,7 @@ bool VisualServerScene::free(RID p_rid) {
 		}
 		memdelete(capsule);
 	} else if (blob_shadow_owner.owns(p_rid)) {
+		resource_kind = "render_free_scene_blob_shadow";
 		BlobShadow *blob = blob_shadow_owner.get(p_rid);
 		blob_shadow_owner.free(p_rid);
 		if (blob->handle) {
@@ -4519,6 +4563,7 @@ bool VisualServerScene::free(RID p_rid) {
 		}
 		memdelete(blob);
 	} else if (blob_light_owner.owns(p_rid)) {
+		resource_kind = "render_free_scene_blob_light";
 		BlobLight *blob_light = blob_light_owner.get(p_rid);
 		blob_light_owner.free(p_rid);
 		if (blob_light->handle) {
@@ -4529,6 +4574,7 @@ bool VisualServerScene::free(RID p_rid) {
 		return false;
 	}
 
+	record_free();
 	return true;
 }
 

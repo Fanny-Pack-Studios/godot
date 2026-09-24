@@ -49,6 +49,8 @@ public:
 		uint64_t variant;
 		uint32_t custom_code_id;
 		uint32_t custom_code_version;
+		uint32_t material_rid;
+		uint32_t object_id;
 		String phase;
 		String operation;
 		String backend;
@@ -56,6 +58,7 @@ public:
 		String source;
 		String shader_name;
 		String material_path;
+		String custom_code_hash;
 		String program_cache_key;
 		String vertex_source_hash;
 		String fragment_source_hash;
@@ -71,6 +74,56 @@ public:
 		bool success;
 
 		ShaderCompilationEvent();
+	};
+
+	struct SceneDiagnosticsEvent {
+		uint64_t started_usec;
+		uint64_t finished_usec;
+		uint64_t idle_frame;
+		uint64_t thread_id;
+		int node_count;
+		int property_count;
+		String operation;
+		String scene_path;
+		String node_path;
+		String node_class;
+		String script_path;
+		bool main_thread;
+
+		SceneDiagnosticsEvent();
+	};
+
+	struct TextureDiagnosticsEvent {
+		uint64_t event_id;
+		uint64_t started_usec;
+		uint64_t finished_usec;
+		uint64_t idle_frame;
+		uint64_t render_frame;
+		uint64_t thread_id;
+		uint64_t data_size_bytes;
+		int width;
+		int height;
+		int format;
+		int mipmap_count;
+		String operation;
+		String path;
+		String backend;
+		bool main_thread;
+		bool compressed;
+		bool success;
+
+		TextureDiagnosticsEvent();
+	};
+
+	struct FrameDiagnosticsEvent {
+		uint64_t started_usec;
+		uint64_t finished_usec;
+		uint64_t idle_frame;
+		uint64_t thread_id;
+		String phase;
+		bool main_thread;
+
+		FrameDiagnosticsEvent();
 	};
 
 	struct Singleton {
@@ -116,6 +169,14 @@ private:
 	Vector<ShaderCompilationEvent> shader_compilation_events;
 	mutable Mutex shader_compilation_debug_targets_mutex;
 	Vector<String> shader_compilation_debug_targets;
+	SafeFlag texture_diagnostics_tracking_enabled;
+	SafeNumeric<uint64_t> texture_diagnostics_sequence;
+	Mutex texture_diagnostics_events_mutex;
+	Vector<TextureDiagnosticsEvent> texture_diagnostics_events;
+	Mutex frame_diagnostics_events_mutex;
+	Vector<FrameDiagnosticsEvent> frame_diagnostics_events;
+	Mutex scene_diagnostics_events_mutex;
+	Vector<SceneDiagnosticsEvent> scene_diagnostics_events;
 
 	static Engine *singleton;
 
@@ -166,6 +227,17 @@ public:
 	void set_shader_compilation_debug_targets(const PoolStringArray &p_targets);
 	PoolStringArray get_shader_compilation_debug_targets() const;
 	bool is_shader_compilation_debug_target(const String &p_material_path) const;
+	void set_texture_diagnostics_tracking_enabled(bool p_enabled);
+	bool is_texture_diagnostics_tracking_enabled() const;
+	uint64_t record_texture_diagnostics_event(const TextureDiagnosticsEvent &p_event);
+	Array drain_texture_diagnostics_events();
+	void clear_texture_diagnostics_events();
+	void record_frame_diagnostics_event(const String &p_phase, uint64_t p_started_usec, uint64_t p_finished_usec);
+	Array drain_frame_diagnostics_events();
+	void clear_frame_diagnostics_events();
+	void record_scene_diagnostics_event(const SceneDiagnosticsEvent &p_event);
+	Array drain_scene_diagnostics_events();
+	void clear_scene_diagnostics_events();
 
 	void add_singleton(const Singleton &p_singleton);
 	void get_singletons(List<Singleton> *p_singletons);

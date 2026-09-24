@@ -29,6 +29,7 @@
 /**************************************************************************/
 
 #include "visual_server_wrap_mt.h"
+#include "core/engine.h"
 #include "core/os/os.h"
 #include "core/project_settings.h"
 
@@ -63,8 +64,16 @@ void VisualServerWrapMT::thread_loop() {
 	exit.clear();
 	draw_thread_up.set();
 	while (!exit.is_set()) {
-		// flush commands one by one, until exit is requested
-		command_queue.wait_and_flush_one();
+		// Flush commands one by one, until exit is requested.
+		Engine *diagnostics_engine = Engine::get_singleton();
+		const bool track_commands = diagnostics_engine && diagnostics_engine->is_texture_diagnostics_tracking_enabled();
+		uint64_t command_started_usec = 0;
+		uint64_t command_finished_usec = 0;
+		const char *command_name = nullptr;
+		command_queue.wait_and_flush_one(track_commands ? &command_started_usec : nullptr, track_commands ? &command_finished_usec : nullptr, track_commands ? &command_name : nullptr);
+		if (track_commands && command_finished_usec - command_started_usec >= 1000) {
+			diagnostics_engine->record_frame_diagnostics_event(String("render_command:") + (command_name ? command_name : "unknown"), command_started_usec, command_finished_usec);
+		}
 	}
 
 	command_queue.flush_all(); // flush all
@@ -76,7 +85,7 @@ void VisualServerWrapMT::thread_loop() {
 
 void VisualServerWrapMT::set_physics_interpolation_enabled(bool p_enabled) {
 	if (Thread::get_caller_id() != server_thread) {
-		command_queue.push(visual_server, &VisualServer::set_physics_interpolation_enabled, p_enabled);
+		command_queue.push_named("set_physics_interpolation_enabled", visual_server, &VisualServer::set_physics_interpolation_enabled, p_enabled);
 	} else {
 		visual_server->set_physics_interpolation_enabled(p_enabled);
 	}
@@ -84,7 +93,7 @@ void VisualServerWrapMT::set_physics_interpolation_enabled(bool p_enabled) {
 
 void VisualServerWrapMT::tick() {
 	if (Thread::get_caller_id() != server_thread) {
-		command_queue.push(visual_server, &VisualServer::tick);
+		command_queue.push_named("tick", visual_server, &VisualServer::tick);
 	} else {
 		visual_server->tick();
 	}
@@ -92,7 +101,7 @@ void VisualServerWrapMT::tick() {
 
 void VisualServerWrapMT::pre_draw(bool p_will_draw) {
 	if (Thread::get_caller_id() != server_thread) {
-		command_queue.push(visual_server, &VisualServer::pre_draw, p_will_draw);
+		command_queue.push_named("pre_draw", visual_server, &VisualServer::pre_draw, p_will_draw);
 	} else {
 		visual_server->pre_draw(p_will_draw);
 	}
@@ -100,7 +109,7 @@ void VisualServerWrapMT::pre_draw(bool p_will_draw) {
 
 void VisualServerWrapMT::sync() {
 	if (create_thread) {
-		command_queue.push_and_sync(this, &VisualServerWrapMT::thread_flush);
+		command_queue.push_and_sync_named("thread_flush", this, &VisualServerWrapMT::thread_flush);
 	} else {
 		command_queue.flush_all(); //flush all pending from other threads
 	}
@@ -108,8 +117,8 @@ void VisualServerWrapMT::sync() {
 
 void VisualServerWrapMT::sync_and_halt() {
 	if (create_thread) {
-		command_queue.push_and_sync(this, &VisualServerWrapMT::thread_flush);
-		command_queue.push(this, &VisualServerWrapMT::thread_halt);
+		command_queue.push_and_sync_named("thread_flush", this, &VisualServerWrapMT::thread_flush);
+		command_queue.push_named("thread_halt", this, &VisualServerWrapMT::thread_halt);
 	}
 }
 
@@ -121,7 +130,7 @@ void VisualServerWrapMT::thaw() {
 
 void VisualServerWrapMT::draw(bool p_swap_buffers, double frame_step) {
 	if (create_thread) {
-		command_queue.push(this, &VisualServerWrapMT::thread_draw, p_swap_buffers, frame_step);
+		command_queue.push_named("thread_draw", this, &VisualServerWrapMT::thread_draw, p_swap_buffers, frame_step);
 	} else {
 		visual_server->draw(p_swap_buffers, frame_step);
 	}
@@ -146,7 +155,7 @@ void VisualServerWrapMT::init() {
 
 void VisualServerWrapMT::finish() {
 	if (create_thread) {
-		command_queue.push(this, &VisualServerWrapMT::thread_exit);
+		command_queue.push_named("thread_exit", this, &VisualServerWrapMT::thread_exit);
 		thread.wait_to_finish();
 	} else {
 		visual_server->finish();
