@@ -30,6 +30,9 @@
 
 #include "nav_map.h"
 
+#include "core/engine.h"
+#include "core/os/os.h"
+
 #include "nav_region.h"
 #include "rvo_agent.h"
 
@@ -559,6 +562,16 @@ void NavMap::sync() {
 
 	std::function<void()> sync_lambda = [regions_for_sync, regen_polys, regen_links, this]() mutable {
 		LocalVector<gd::Polygon> polygons_for_sync;
+		Engine *diagnostics_engine = Engine::get_singleton();
+		const bool track_phases = diagnostics_engine && diagnostics_engine->is_texture_diagnostics_tracking_enabled() && (regen_polys || regen_links);
+		uint64_t phase_started_usec = track_phases ? OS::get_singleton()->get_ticks_usec() : 0;
+		auto finish_phase = [&](const char *p_phase) {
+			if (track_phases) {
+				const uint64_t finished_usec = OS::get_singleton()->get_ticks_usec();
+				diagnostics_engine->record_frame_diagnostics_event(p_phase, phase_started_usec, finished_usec);
+				phase_started_usec = finished_usec;
+			}
+		};
 		// Check if we need to update the links.
 		if (regen_polys) {
 			const uint32_t * k = nullptr;
@@ -568,12 +581,15 @@ void NavMap::sync() {
 
 			regen_links = true;
 		}
+		finish_phase("nav_sync_scratch");
 
 		for (const uint32_t * k = nullptr; (k = regions_for_sync.next(k));) {
 			if (regions_for_sync[*k]->sync()) {
 				regen_links = true;
 			}
 		}
+
+		finish_phase("nav_sync_regions");
 
 		if (regen_links) {
 			// Remove regions connections.
@@ -598,6 +614,8 @@ void NavMap::sync() {
 				}
 				count += region->get_polygons().size();
 			}
+
+			finish_phase("nav_sync_copy_polygons");
 
 			// Group all edges per key.
 			Map<gd::EdgeKey, Vector<gd::Edge::Connection>> connections;
@@ -627,6 +645,8 @@ void NavMap::sync() {
 				}
 			}
 			
+			finish_phase("nav_sync_collect_edges");
+
 			Vector<gd::Edge::Connection> free_edges;
 			for (Map<gd::EdgeKey, Vector<gd::Edge::Connection>>::Element *E = connections.front(); E; E = E->next()) {
 				if (E->get().size() == 2) {
@@ -641,6 +661,8 @@ void NavMap::sync() {
 					free_edges.push_back(E->get()[0]);
 				}
 			}
+
+			finish_phase("nav_sync_connect_shared");
 
 			// Find the compatible near edges.
 			//
@@ -710,7 +732,9 @@ void NavMap::sync() {
 				}
 			}
 
+			finish_phase("nav_sync_connect_near");
 			this->on_sync_finished(regions_for_sync, polygons_for_sync);
+			finish_phase("nav_sync_publish");
 		}
 
 		for (const uint32_t * k = nullptr; (k = regions_for_sync.next(k));) {

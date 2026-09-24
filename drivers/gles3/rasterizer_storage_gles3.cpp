@@ -6697,12 +6697,22 @@ void RasterizerStorageGLES3::_particles_process(Particles *p_particles, float p_
 }
 
 void RasterizerStorageGLES3::update_particles() {
+	Engine *diagnostics_engine = Engine::get_singleton();
+	const bool track_particles = diagnostics_engine && diagnostics_engine->is_texture_diagnostics_tracking_enabled();
+	// Diagnostic cap for comparing particle startup cost without editing scenes.
+	static const String preprocess_override = OS::get_singleton()->get_environment("RYA_PARTICLES_PREPROCESS_MAX_SECONDS");
 	glEnable(GL_RASTERIZER_DISCARD);
 
 	while (particle_update_list.first()) {
 		//use transform feedback to process particles
 
 		Particles *particles = particle_update_list.first()->self();
+		const uint64_t particle_started_usec = track_particles ? OS::get_singleton()->get_ticks_usec() : 0;
+		const float effective_preprocess_time = preprocess_override.empty() ? particles->pre_process_time : MIN(particles->pre_process_time, MAX(0.0f, preprocess_override.to_float()));
+		uint64_t preprocess_started_usec = 0;
+		uint64_t preprocess_elapsed_usec = 0;
+		int preprocess_steps = 0;
+		int fixed_steps = 0;
 
 		if (particles->restart_request) {
 			particles->prev_ticks = 0;
@@ -6808,7 +6818,8 @@ void RasterizerStorageGLES3::update_particles() {
 
 		bool zero_time_scale = Engine::get_singleton()->get_time_scale() <= 0.0;
 
-		if (particles->clear && particles->pre_process_time > 0.0) {
+		if (particles->clear && effective_preprocess_time > 0.0) {
+			preprocess_started_usec = track_particles ? OS::get_singleton()->get_ticks_usec() : 0;
 			float frame_time;
 			if (particles->fixed_fps > 0) {
 				frame_time = 1.0 / particles->fixed_fps;
@@ -6816,11 +6827,15 @@ void RasterizerStorageGLES3::update_particles() {
 				frame_time = 1.0 / 30.0;
 			}
 
-			float todo = particles->pre_process_time;
+			float todo = effective_preprocess_time;
 
 			while (todo >= 0) {
 				_particles_process(particles, frame_time);
 				todo -= frame_time;
+				preprocess_steps++;
+			}
+			if (track_particles) {
+				preprocess_elapsed_usec = OS::get_singleton()->get_ticks_usec() - preprocess_started_usec;
 			}
 		}
 
@@ -6845,6 +6860,7 @@ void RasterizerStorageGLES3::update_particles() {
 			while (todo >= frame_time) {
 				_particles_process(particles, frame_time);
 				todo -= decr;
+				fixed_steps++;
 			}
 
 			particles->frame_remainder = todo;
@@ -6873,6 +6889,18 @@ void RasterizerStorageGLES3::update_particles() {
 		}
 
 		particles->instance_change_notify(true, false); //make sure shadows are updated
+		if (track_particles) {
+			const uint64_t particle_finished_usec = OS::get_singleton()->get_ticks_usec();
+			if (particle_finished_usec - particle_started_usec >= 1000) {
+				const String material_path = material ? material->path : String();
+				const String details = String(":amount=") + itos(particles->amount) + ":preprocess=" + String::num(particles->pre_process_time) + ":effective_preprocess=" + String::num(effective_preprocess_time) + ":preprocess_steps=" + itos(preprocess_steps) + ":fixed_steps=" + itos(fixed_steps) + ":material=" + material_path;
+				diagnostics_engine->record_frame_diagnostics_event(String("render_particle_update") + details, particle_started_usec, particle_finished_usec);
+				if (preprocess_elapsed_usec >= 1000) {
+					const uint64_t preprocess_finished_usec = preprocess_started_usec + preprocess_elapsed_usec;
+					diagnostics_engine->record_frame_diagnostics_event(String("render_particle_preprocess") + details, particle_started_usec, preprocess_finished_usec);
+				}
+			}
+		}
 	}
 
 	glDisable(GL_RASTERIZER_DISCARD);
@@ -7876,7 +7904,12 @@ VS::InstanceType RasterizerStorageGLES3::get_base_type(RID p_rid) const {
 }
 
 bool RasterizerStorageGLES3::free(RID p_rid) {
+	Engine *diagnostics_engine = Engine::get_singleton();
+	const bool track_free = diagnostics_engine && diagnostics_engine->is_texture_diagnostics_tracking_enabled();
+	const uint64_t started_usec = track_free ? OS::get_singleton()->get_ticks_usec() : 0;
+	const char *resource_kind = nullptr;
 	if (render_target_owner.owns(p_rid)) {
+		resource_kind = "render_target";
 		RenderTarget *rt = render_target_owner.getornull(p_rid);
 		_render_target_clear(rt);
 		Texture *t = texture_owner.get(rt->texture);
@@ -7886,6 +7919,7 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		memdelete(rt);
 
 	} else if (texture_owner.owns(p_rid)) {
+		resource_kind = "texture";
 		// delete the texture
 		Texture *texture = texture_owner.get(p_rid);
 		ERR_FAIL_COND_V(texture->render_target, true); //can't free the render target texture, dude
@@ -7894,6 +7928,7 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		memdelete(texture);
 
 	} else if (sky_owner.owns(p_rid)) {
+		resource_kind = "sky";
 		// delete the sky
 		Sky *sky = sky_owner.get(p_rid);
 		sky_set_texture(p_rid, RID(), 256);
@@ -7901,6 +7936,7 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		memdelete(sky);
 
 	} else if (shader_owner.owns(p_rid)) {
+		resource_kind = "shader";
 		// delete the texture
 		Shader *shader = shader_owner.get(p_rid);
 
@@ -7926,6 +7962,7 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		memdelete(shader);
 
 	} else if (material_owner.owns(p_rid)) {
+		resource_kind = "material";
 		// delete the texture
 		Material *material = material_owner.get(p_rid);
 
@@ -7964,6 +8001,7 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		memdelete(material);
 
 	} else if (skeleton_owner.owns(p_rid)) {
+		resource_kind = "skeleton";
 		// delete the texture
 		Skeleton *skeleton = skeleton_owner.get(p_rid);
 		if (skeleton->update_list.in_list()) {
@@ -7981,6 +8019,7 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		memdelete(skeleton);
 
 	} else if (mesh_owner.owns(p_rid)) {
+		resource_kind = "mesh";
 		// delete the texture
 		Mesh *mesh = mesh_owner.get(p_rid);
 		mesh->instance_remove_deps();
@@ -8001,6 +8040,7 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		memdelete(mesh);
 
 	} else if (multimesh_owner.owns(p_rid)) {
+		resource_kind = "multimesh";
 		// remove from interpolator
 		_interpolation_data.notify_free_multimesh(p_rid);
 
@@ -8029,12 +8069,14 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		multimesh_owner.free(p_rid);
 		memdelete(multimesh);
 	} else if (immediate_owner.owns(p_rid)) {
+		resource_kind = "immediate";
 		Immediate *immediate = immediate_owner.get(p_rid);
 		immediate->instance_remove_deps();
 
 		immediate_owner.free(p_rid);
 		memdelete(immediate);
 	} else if (light_owner.owns(p_rid)) {
+		resource_kind = "light";
 		// delete the texture
 		Light *light = light_owner.get(p_rid);
 		light->instance_remove_deps();
@@ -8043,6 +8085,7 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		memdelete(light);
 
 	} else if (reflection_probe_owner.owns(p_rid)) {
+		resource_kind = "reflection_probe";
 		// delete the texture
 		ReflectionProbe *reflection_probe = reflection_probe_owner.get(p_rid);
 		reflection_probe->instance_remove_deps();
@@ -8051,6 +8094,7 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		memdelete(reflection_probe);
 
 	} else if (gi_probe_owner.owns(p_rid)) {
+		resource_kind = "gi_probe";
 		// delete the texture
 		GIProbe *gi_probe = gi_probe_owner.get(p_rid);
 		gi_probe->instance_remove_deps();
@@ -8058,6 +8102,7 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		gi_probe_owner.free(p_rid);
 		memdelete(gi_probe);
 	} else if (gi_probe_data_owner.owns(p_rid)) {
+		resource_kind = "gi_probe_data";
 		// delete the texture
 		GIProbeData *gi_probe_data = gi_probe_data_owner.get(p_rid);
 
@@ -8065,6 +8110,7 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		gi_probe_data_owner.free(p_rid);
 		memdelete(gi_probe_data);
 	} else if (lightmap_capture_data_owner.owns(p_rid)) {
+		resource_kind = "lightmap_capture_data";
 		// delete the texture
 		LightmapCapture *lightmap_capture = lightmap_capture_data_owner.get(p_rid);
 		lightmap_capture->instance_remove_deps();
@@ -8073,6 +8119,7 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		memdelete(lightmap_capture);
 
 	} else if (canvas_occluder_owner.owns(p_rid)) {
+		resource_kind = "canvas_occluder";
 		CanvasOccluder *co = canvas_occluder_owner.get(p_rid);
 		if (co->index_id) {
 			glDeleteBuffers(1, &co->index_id);
@@ -8087,6 +8134,7 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		memdelete(co);
 
 	} else if (canvas_light_shadow_owner.owns(p_rid)) {
+		resource_kind = "canvas_light_shadow";
 		CanvasLightShadow *cls = canvas_light_shadow_owner.get(p_rid);
 		glDeleteFramebuffers(1, &cls->fbo);
 		glDeleteRenderbuffers(1, &cls->depth);
@@ -8094,6 +8142,7 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		canvas_light_shadow_owner.free(p_rid);
 		memdelete(cls);
 	} else if (particles_owner.owns(p_rid)) {
+		resource_kind = "particles";
 		Particles *particles = particles_owner.get(p_rid);
 		particles->instance_remove_deps();
 		particles_owner.free(p_rid);
@@ -8102,6 +8151,12 @@ bool RasterizerStorageGLES3::free(RID p_rid) {
 		return false;
 	}
 
+	if (track_free && resource_kind) {
+		const uint64_t finished_usec = OS::get_singleton()->get_ticks_usec();
+		if (finished_usec - started_usec >= 1000) {
+			diagnostics_engine->record_frame_diagnostics_event(String("render_free_storage:") + resource_kind, started_usec, finished_usec);
+		}
+	}
 	return true;
 }
 
@@ -8621,12 +8676,32 @@ void RasterizerStorageGLES3::finalize() {
 }
 
 void RasterizerStorageGLES3::update_dirty_resources() {
+	Engine *diagnostics_engine = Engine::get_singleton();
+	const bool track = diagnostics_engine && diagnostics_engine->is_texture_diagnostics_tracking_enabled();
+	uint64_t phase_started_usec = track ? OS::get_singleton()->get_ticks_usec() : 0;
+	auto record_phase = [&](const char *p_phase) {
+		if (!track) {
+			return;
+		}
+		const uint64_t finished_usec = OS::get_singleton()->get_ticks_usec();
+		if (finished_usec - phase_started_usec >= 1000) {
+			diagnostics_engine->record_frame_diagnostics_event(p_phase, phase_started_usec, finished_usec);
+		}
+		phase_started_usec = finished_usec;
+	};
+
 	update_dirty_multimeshes();
+	record_phase("render_dirty_multimeshes");
 	update_dirty_skeletons();
+	record_phase("render_dirty_skeletons");
 	update_dirty_shaders();
+	record_phase("render_dirty_shaders");
 	update_dirty_materials();
+	record_phase("render_dirty_materials");
 	update_particles();
+	record_phase("render_update_particles");
 	update_dirty_captures();
+	record_phase("render_dirty_captures");
 }
 
 RasterizerStorageGLES3::RasterizerStorageGLES3() {
