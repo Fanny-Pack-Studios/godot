@@ -71,19 +71,35 @@ void VisualServerRaster::free(RID p_rid) {
 		return;
 	}
 
+	Engine *diagnostics_engine = Engine::get_singleton();
+	const bool track_free = diagnostics_engine && diagnostics_engine->is_texture_diagnostics_tracking_enabled();
+	const uint64_t started_usec = track_free ? OS::get_singleton()->get_ticks_usec() : 0;
+	auto record_free = [&](const char *p_owner) {
+		if (track_free) {
+			const uint64_t finished_usec = OS::get_singleton()->get_ticks_usec();
+			if (finished_usec - started_usec >= 1000) {
+				diagnostics_engine->record_frame_diagnostics_event(p_owner, started_usec, finished_usec);
+			}
+		}
+	};
 	if (VSG::storage->free(p_rid)) {
+		record_free("render_free_storage");
 		return;
 	}
 	if (VSG::canvas->free(p_rid)) {
+		record_free("render_free_canvas");
 		return;
 	}
 	if (VSG::viewport->free(p_rid)) {
+		record_free("render_free_viewport");
 		return;
 	}
 	if (VSG::scene->free(p_rid)) {
+		record_free("render_free_scene");
 		return;
 	}
 	if (VSG::scene_render->free(p_rid)) {
+		record_free("render_free_scene_render");
 		return;
 	}
 
@@ -106,20 +122,34 @@ void VisualServerRaster::draw(bool p_swap_buffers, double frame_step) {
 	Engine *diagnostics_engine = Engine::get_singleton();
 	bool diagnostics_tracking = diagnostics_engine->is_texture_diagnostics_tracking_enabled();
 	uint64_t diagnostics_started_usec = diagnostics_tracking ? OS::get_singleton()->get_ticks_usec() : 0;
+	uint64_t diagnostics_phase_started_usec = diagnostics_started_usec;
+	auto record_render_phase = [&](const char *p_phase) {
+		if (diagnostics_tracking) {
+			const uint64_t finished_usec = OS::get_singleton()->get_ticks_usec();
+			diagnostics_engine->record_frame_diagnostics_event(p_phase, diagnostics_phase_started_usec, finished_usec);
+			diagnostics_phase_started_usec = finished_usec;
+		}
+	};
 	//needs to be done before changes is reset to 0, to not force the editor to redraw
 	VS::get_singleton()->emit_signal("frame_pre_draw");
 
 	changes[0] = 0;
 	changes[1] = 0;
+	record_render_phase("render_pre_draw");
 
 	VSG::rasterizer->begin_frame(frame_step);
+	record_render_phase("render_begin_frame");
 
 	VSG::scene->update_dirty_instances(); //update scene stuff
+	record_render_phase("render_update_dirty_instances");
 
 	VSG::viewport->draw_viewports();
+	record_render_phase("render_draw_viewports");
 	VSG::scene->render_probes();
 	_draw_margins();
+	record_render_phase("render_probes_and_margins");
 	VSG::rasterizer->end_frame(p_swap_buffers);
+	record_render_phase("render_end_frame");
 
 	while (frame_drawn_callbacks.front()) {
 		Object *obj = ObjectDB::get_instance(frame_drawn_callbacks.front()->get().object);
@@ -136,6 +166,7 @@ void VisualServerRaster::draw(bool p_swap_buffers, double frame_step) {
 		frame_drawn_callbacks.pop_front();
 	}
 	VS::get_singleton()->emit_signal("frame_post_draw");
+	record_render_phase("render_post_draw");
 	if (diagnostics_tracking) {
 		diagnostics_engine->record_frame_diagnostics_event("render_draw", diagnostics_started_usec, OS::get_singleton()->get_ticks_usec());
 	}

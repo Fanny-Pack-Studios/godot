@@ -32,6 +32,7 @@
 #define COMMAND_QUEUE_MT_H
 
 #include "core/os/memory.h"
+#include "core/os/os.h"
 #include "core/os/mutex.h"
 #include "core/os/semaphore.h"
 #include "core/simple_type.h"
@@ -227,8 +228,9 @@
 
 #define DECL_PUSH(N)                                                         \
 	template <class T, class M COMMA(N) COMMA_SEP_LIST(TYPE_PARAM, N)>       \
-	void push(T *p_instance, M p_method COMMA(N) COMMA_SEP_LIST(PARAM, N)) { \
+	void push_named(const char *p_debug_name, T *p_instance, M p_method COMMA(N) COMMA_SEP_LIST(PARAM, N)) { \
 		CMD_TYPE(N) *cmd = allocate_and_lock<CMD_TYPE(N)>();                 \
+		cmd->debug_name = p_debug_name;                                      \
 		cmd->instance = p_instance;                                          \
 		cmd->method = p_method;                                              \
 		SEMIC_SEP_LIST(CMD_ASSIGN_PARAM, N);                                 \
@@ -241,9 +243,10 @@
 
 #define DECL_PUSH_AND_RET(N)                                                                   \
 	template <class T, class M, COMMA_SEP_LIST(TYPE_PARAM, N) COMMA(N) class R>                \
-	void push_and_ret(T *p_instance, M p_method, COMMA_SEP_LIST(PARAM, N) COMMA(N) R *r_ret) { \
+	void push_and_ret_named(const char *p_debug_name, T *p_instance, M p_method, COMMA_SEP_LIST(PARAM, N) COMMA(N) R *r_ret) { \
 		SyncSemaphore *ss = _alloc_sync_sem();                                                 \
 		CMD_RET_TYPE(N) *cmd = allocate_and_lock<CMD_RET_TYPE(N)>();                           \
+		cmd->debug_name = p_debug_name;                                                        \
 		cmd->instance = p_instance;                                                            \
 		cmd->method = p_method;                                                                \
 		SEMIC_SEP_LIST(CMD_ASSIGN_PARAM, N);                                                   \
@@ -260,9 +263,10 @@
 
 #define DECL_PUSH_AND_SYNC(N)                                                         \
 	template <class T, class M COMMA(N) COMMA_SEP_LIST(TYPE_PARAM, N)>                \
-	void push_and_sync(T *p_instance, M p_method COMMA(N) COMMA_SEP_LIST(PARAM, N)) { \
+	void push_and_sync_named(const char *p_debug_name, T *p_instance, M p_method COMMA(N) COMMA_SEP_LIST(PARAM, N)) { \
 		SyncSemaphore *ss = _alloc_sync_sem();                                        \
 		CMD_SYNC_TYPE(N) *cmd = allocate_and_lock<CMD_SYNC_TYPE(N)>();                \
+		cmd->debug_name = p_debug_name;                                               \
 		cmd->instance = p_instance;                                                   \
 		cmd->method = p_method;                                                       \
 		SEMIC_SEP_LIST(CMD_ASSIGN_PARAM, N);                                          \
@@ -274,6 +278,24 @@
 		ss->in_use = false;                                                           \
 	}
 
+#define DECL_PUSH_UNNAMED(N) \
+	template <class T, class M COMMA(N) COMMA_SEP_LIST(TYPE_PARAM, N)> \
+	void push(T *p_instance, M p_method COMMA(N) COMMA_SEP_LIST(PARAM, N)) { \
+		push_named(nullptr, p_instance, p_method COMMA(N) COMMA_SEP_LIST(ARG, N)); \
+	}
+
+#define DECL_PUSH_AND_RET_UNNAMED(N) \
+	template <class T, class M, COMMA_SEP_LIST(TYPE_PARAM, N) COMMA(N) class R> \
+	void push_and_ret(T *p_instance, M p_method, COMMA_SEP_LIST(PARAM, N) COMMA(N) R *r_ret) { \
+		push_and_ret_named(nullptr, p_instance, p_method COMMA(N) COMMA_SEP_LIST(ARG, N), r_ret); \
+	}
+
+#define DECL_PUSH_AND_SYNC_UNNAMED(N) \
+	template <class T, class M COMMA(N) COMMA_SEP_LIST(TYPE_PARAM, N)> \
+	void push_and_sync(T *p_instance, M p_method COMMA(N) COMMA_SEP_LIST(PARAM, N)) { \
+		push_and_sync_named(nullptr, p_instance, p_method COMMA(N) COMMA_SEP_LIST(ARG, N)); \
+	}
+
 #define MAX_CMD_PARAMS 13
 
 class CommandQueueMT {
@@ -283,6 +305,7 @@ class CommandQueueMT {
 	};
 
 	struct CommandBase {
+		const char *debug_name = nullptr;
 		virtual void call() = 0;
 		virtual void post(){};
 		virtual ~CommandBase(){};
@@ -402,7 +425,7 @@ class CommandQueueMT {
 		return ret;
 	}
 
-	bool flush_one(bool p_lock = true) {
+	bool flush_one(bool p_lock = true, const char **p_debug_name = nullptr) {
 		if (p_lock) {
 			lock();
 		}
@@ -430,6 +453,9 @@ class CommandQueueMT {
 		read_ptr += 8;
 
 		CommandBase *cmd = reinterpret_cast<CommandBase *>(&command_mem[read_ptr]);
+		if (p_debug_name) {
+			*p_debug_name = cmd->debug_name;
+		}
 
 		read_ptr += size;
 
@@ -463,19 +489,31 @@ public:
 	/* NORMAL PUSH COMMANDS */
 	DECL_PUSH(0)
 	SPACE_SEP_LIST(DECL_PUSH, 13)
+	DECL_PUSH_UNNAMED(0)
+	SPACE_SEP_LIST(DECL_PUSH_UNNAMED, 13)
 
 	/* PUSH AND RET COMMANDS */
 	DECL_PUSH_AND_RET(0)
 	SPACE_SEP_LIST(DECL_PUSH_AND_RET, 13)
+	DECL_PUSH_AND_RET_UNNAMED(0)
+	SPACE_SEP_LIST(DECL_PUSH_AND_RET_UNNAMED, 13)
 
 	/* PUSH AND RET SYNC COMMANDS*/
 	DECL_PUSH_AND_SYNC(0)
 	SPACE_SEP_LIST(DECL_PUSH_AND_SYNC, 13)
+	DECL_PUSH_AND_SYNC_UNNAMED(0)
+	SPACE_SEP_LIST(DECL_PUSH_AND_SYNC_UNNAMED, 13)
 
-	void wait_and_flush_one() {
+	void wait_and_flush_one(uint64_t *p_started_usec = nullptr, uint64_t *p_finished_usec = nullptr, const char **p_debug_name = nullptr) {
 		ERR_FAIL_COND(!sync);
 		sync->wait();
-		flush_one();
+		if (p_started_usec) {
+			*p_started_usec = OS::get_singleton()->get_ticks_usec();
+		}
+		flush_one(true, p_debug_name);
+		if (p_finished_usec) {
+			*p_finished_usec = OS::get_singleton()->get_ticks_usec();
+		}
 	}
 
 	void flush_all() {
